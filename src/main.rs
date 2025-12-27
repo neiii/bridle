@@ -5,7 +5,7 @@ mod harness;
 mod tui;
 
 use clap::Parser;
-use cli::Commands;
+use cli::{Commands, ProfileCommands};
 
 #[derive(Parser)]
 #[command(name = "bridle")]
@@ -22,9 +22,15 @@ fn main() -> color_eyre::Result<()> {
 
     match cli.command {
         Commands::Status => cli::status::display_status(),
-        Commands::List => cli::profile::list_profiles(),
-        Commands::Show { name } => cli::profile::show_profile(&name),
-        Commands::Apply { name } => cli::profile::apply_profile(&name),
+        Commands::Init => cli::init::run_init(),
+        Commands::Profile(profile_cmd) => match profile_cmd {
+            ProfileCommands::List => cli::profile::list_profiles(),
+            ProfileCommands::Show { name } => cli::profile::show_profile(&name),
+            ProfileCommands::Apply { name } => cli::profile::apply_profile(&name),
+            ProfileCommands::Add { name } => cli::profile::add_profile(&name),
+            ProfileCommands::Remove { name } => cli::profile::remove_profile(&name),
+        },
+        Commands::Tui => cli::tui::run_tui(),
     }
 
     Ok(())

@@ -2,12 +2,24 @@
 
 use clap::Subcommand;
 
-/// Available CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Show status of all harnesses.
     Status,
 
+    /// Initialize bridle configuration.
+    Init,
+
+    /// Manage profiles.
+    #[command(subcommand)]
+    Profile(ProfileCommands),
+
+    /// Launch terminal UI.
+    Tui,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ProfileCommands {
     /// List available profiles.
     List,
 
@@ -20,6 +32,18 @@ pub enum Commands {
     /// Apply a profile (activate its configuration).
     Apply {
         /// Profile name to apply.
+        name: String,
+    },
+
+    /// Add a new profile.
+    Add {
+        /// Profile name to create.
+        name: String,
+    },
+
+    /// Remove a profile.
+    Remove {
+        /// Profile name to remove.
         name: String,
     },
 }
