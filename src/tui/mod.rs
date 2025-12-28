@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use get_harness::{Harness, HarnessKind, InstallationStatus};
+use harness_locate::{Harness, HarnessKind, InstallationStatus};
 
 use crate::harness::HarnessConfig;
 use ratatui::{
@@ -261,8 +261,10 @@ impl App {
         };
         if self.expanded_profile == Some(idx) {
             self.expanded_profile = None;
+            self.status_message = Some("Collapsed".to_string());
         } else {
             self.expanded_profile = Some(idx);
+            self.status_message = Some(format!("Expanded profile {}", idx));
         }
     }
 
@@ -560,7 +562,7 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
         ),
         Span::styled(
             " ─────────────────────────",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Gray),
         ),
     ]));
 
@@ -574,15 +576,13 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
     if !theme_model.is_empty() {
         lines.push(Line::styled(
             format!("  │ {}", theme_model.join("  ")),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Gray),
         ));
     }
 
     if !profile.mcp_servers.is_empty() {
-        let mut spans: Vec<Span> = vec![Span::styled(
-            "  │ MCP: ",
-            Style::default().fg(Color::DarkGray),
-        )];
+        let mut spans: Vec<Span> =
+            vec![Span::styled("  │ MCP: ", Style::default().fg(Color::Gray))];
         for (i, server) in profile.mcp_servers.iter().enumerate() {
             if i > 0 {
                 spans.push(Span::raw(" "));
@@ -612,7 +612,7 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
     }
     lines.push(Line::styled(
         format!("  │ {}", counts.join("  ")),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     if let Some(ref rules) = profile.rules_file
@@ -620,7 +620,7 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
     {
         lines.push(Line::styled(
             format!("  │ Rules: {}", filename.to_string_lossy()),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Gray),
         ));
     }
 
@@ -633,7 +633,7 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
 
     lines.push(Line::styled(
         "  └─────────────────────────────",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     lines

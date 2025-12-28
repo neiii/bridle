@@ -1,6 +1,6 @@
 //! Init command implementation.
 
-use get_harness::{Harness, HarnessKind};
+use harness_locate::{Harness, HarnessKind};
 
 use crate::config::{BridleConfig, ProfileManager};
 

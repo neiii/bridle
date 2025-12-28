@@ -1,6 +1,6 @@
 //! Profile management commands.
 
-use get_harness::{Harness, HarnessKind};
+use harness_locate::{Harness, HarnessKind};
 
 use crate::config::{BridleConfig, ProfileManager, ProfileName};
 use crate::harness::HarnessConfig;
@@ -67,18 +67,99 @@ pub fn show_profile(harness_name: &str, profile_name: &str) {
         Ok(info) => {
             println!("Profile: {}", info.name);
             println!("Harness: {}", info.harness_id);
-            println!("Active: {}", if info.is_active { "yes" } else { "no" });
+            println!(
+                "Status: {}",
+                if info.is_active { "Active" } else { "Inactive" }
+            );
             println!("Path: {}", info.path.display());
+            println!();
+
+            // Theme (OpenCode only)
+            match &info.theme {
+                Some(theme) => println!("Theme: {theme}"),
+                None if info.harness_id == "opencode" => println!("Theme: (not set)"),
+                None => println!("Theme: (not supported)"),
+            }
+
+            // Model
+            match &info.model {
+                Some(model) => println!("Model: {model}"),
+                None => println!("Model: (not set)"),
+            }
+            println!();
+
+            // MCP Servers
             if info.mcp_servers.is_empty() {
                 println!("MCP Servers: (none)");
             } else {
-                println!("MCP Servers:");
+                println!("MCP Servers ({}):", info.mcp_servers.len());
                 for server in &info.mcp_servers {
-                    println!("  - {}", server.name);
+                    let indicator = if server.enabled {
+                        "\u{2713}"
+                    } else {
+                        "\u{2717}"
+                    };
+                    let suffix = if server.enabled {
+                        String::new()
+                    } else {
+                        " (disabled)".to_string()
+                    };
+                    println!("  {indicator} {}{suffix}", server.name);
+                }
+            }
+            println!();
+
+            // Skills
+            print_resource_summary("Skills", &info.skills);
+
+            // Commands
+            print_resource_summary("Commands", &info.commands);
+
+            // Plugins (OpenCode only)
+            match &info.plugins {
+                Some(plugins) => print_resource_summary("Plugins", plugins),
+                None => println!("Plugins: (not supported)"),
+            }
+
+            // Agents (OpenCode only)
+            match &info.agents {
+                Some(agents) => print_resource_summary("Agents", agents),
+                None => println!("Agents: (not supported)"),
+            }
+
+            // Rules file
+            match &info.rules_file {
+                Some(path) => {
+                    let filename = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("(unknown)");
+                    println!("Rules: {filename}");
+                }
+                None => println!("Rules: (none)"),
+            }
+
+            // Extraction errors
+            if !info.extraction_errors.is_empty() {
+                println!();
+                println!("Errors:");
+                for err in &info.extraction_errors {
+                    println!("  \u{26a0} {err}");
                 }
             }
         }
         Err(e) => eprintln!("Error showing profile: {e}"),
+    }
+}
+
+fn print_resource_summary(label: &str, summary: &crate::config::ResourceSummary) {
+    if !summary.directory_exists {
+        println!("{label}: (directory not found)");
+    } else if summary.items.is_empty() {
+        println!("{label}: (none)");
+    } else {
+        println!("{label} ({}):", summary.items.len());
+        println!("  {}", summary.items.join(", "));
     }
 }
 
@@ -222,7 +303,7 @@ pub fn diff_profiles(harness_name: &str, profile_name: &str, other_name: Option<
         }
         path
     } else {
-        match harness.config(&get_harness::Scope::Global) {
+        match harness.config(&harness_locate::Scope::Global) {
             Ok(path) => path,
             Err(_) => {
                 eprintln!("Could not find current config for harness");

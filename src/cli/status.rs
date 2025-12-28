@@ -1,6 +1,6 @@
 //! Status display functionality.
 
-use get_harness::{Harness, HarnessKind, InstallationStatus, Scope};
+use harness_locate::{Harness, HarnessKind, InstallationStatus, Scope};
 
 use crate::config::BridleConfig;
 
