@@ -10,8 +10,26 @@ use super::profile_name::ProfileName;
 use crate::error::{Error, Result};
 use crate::harness::HarnessConfig;
 
+/// MCP server info with enabled status.
+#[derive(Debug, Clone, Default)]
+pub struct McpServerInfo {
+    /// Server name.
+    pub name: String,
+    /// Whether the server is enabled.
+    pub enabled: bool,
+}
+
+/// Summary of directory-based resources (skills, commands, etc.).
+#[derive(Debug, Clone, Default)]
+pub struct ResourceSummary {
+    /// List of resource names/items.
+    pub items: Vec<String>,
+    /// Whether the resource directory exists.
+    pub directory_exists: bool,
+}
+
 /// Information about a profile for display purposes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProfileInfo {
     /// Profile name.
     pub name: String,
@@ -19,10 +37,28 @@ pub struct ProfileInfo {
     pub harness_id: String,
     /// Whether this is the currently active profile.
     pub is_active: bool,
-    /// List of MCP server names configured in this profile.
-    pub mcp_servers: Vec<String>,
     /// Path to the profile directory.
     pub path: PathBuf,
+
+    /// MCP servers with enabled status.
+    pub mcp_servers: Vec<McpServerInfo>,
+
+    /// Skills directory summary.
+    pub skills: ResourceSummary,
+    /// Commands directory summary.
+    pub commands: ResourceSummary,
+    /// Plugins directory summary (OpenCode only).
+    pub plugins: Option<ResourceSummary>,
+    /// Agents directory summary (OpenCode only).
+    pub agents: Option<ResourceSummary>,
+    /// Path to rules file if it exists.
+    pub rules_file: Option<PathBuf>,
+    /// Theme setting (OpenCode only).
+    pub theme: Option<String>,
+    /// Model setting.
+    pub model: Option<String>,
+    /// Errors encountered during extraction.
+    pub extraction_errors: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -161,8 +197,22 @@ impl ProfileManager {
             name: name.as_str().to_string(),
             harness_id,
             is_active,
-            mcp_servers,
             path,
+            mcp_servers: mcp_servers
+                .into_iter()
+                .map(|name| McpServerInfo {
+                    name,
+                    enabled: true,
+                })
+                .collect(),
+            skills: ResourceSummary::default(),
+            commands: ResourceSummary::default(),
+            plugins: None,
+            agents: None,
+            rules_file: None,
+            theme: None,
+            model: None,
+            extraction_errors: Vec::new(),
         })
     }
 

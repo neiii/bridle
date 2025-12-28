@@ -74,7 +74,7 @@ pub fn show_profile(harness_name: &str, profile_name: &str) {
             } else {
                 println!("MCP Servers:");
                 for server in &info.mcp_servers {
-                    println!("  - {server}");
+                    println!("  - {}", server.name);
                 }
             }
         }
