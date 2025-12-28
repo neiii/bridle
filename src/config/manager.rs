@@ -373,11 +373,18 @@ impl ProfileManager {
             .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
             .unwrap_or(false);
 
-        let mcp_servers = self.extract_mcp_servers(harness, &path)?;
         let theme = self.extract_theme(harness, &path);
         let model = self.extract_model(harness, &path);
 
         let mut extraction_errors = Vec::new();
+
+        let mcp_servers = match self.extract_mcp_servers(harness, &path) {
+            Ok(servers) => servers,
+            Err(e) => {
+                extraction_errors.push(format!("MCP config: {}", e));
+                Vec::new()
+            }
+        };
 
         let (skills, err) = self.extract_skills(harness, &path);
         if let Some(e) = err {
@@ -473,6 +480,7 @@ impl ProfileManager {
                     .and_then(|v| v.as_str())
                     .map(String::from)
             }
+            "amp-code" => None,
             _ => None,
         }
     }
@@ -486,6 +494,7 @@ impl ProfileManager {
             "opencode" => self.extract_model_opencode(profile_path),
             "claude-code" => self.extract_model_claude_code(profile_path),
             "goose" => self.extract_model_goose(profile_path),
+            "amp-code" => self.extract_model_ampcode(profile_path),
             _ => None,
         }
     }
@@ -528,6 +537,32 @@ impl ProfileManager {
             .get("GOOSE_MODEL")
             .and_then(|v| v.as_str())
             .map(String::from)
+    }
+
+    fn extract_model_ampcode(&self, profile_path: &std::path::Path) -> Option<String> {
+        let config_path = profile_path.join("settings.json");
+        let content = std::fs::read_to_string(&config_path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+        let amp = parsed.get("amp")?;
+
+        if let Some(model) = amp.get("model").and_then(|m| m.as_str()) {
+            return Some(model.to_string());
+        }
+
+        if let Some(model_obj) = amp.get("model").and_then(|m| m.as_object()) {
+            for model in ["opus", "sonnet", "haiku"] {
+                if model_obj
+                    .get(model)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Some(format!("claude-{}", model));
+                }
+            }
+        }
+
+        None
     }
 
     fn extract_skills(

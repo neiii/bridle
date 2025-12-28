@@ -10,6 +10,7 @@ fn resolve_harness(name: &str) -> Option<Harness> {
         "claude-code" | "claude" | "cc" => HarnessKind::ClaudeCode,
         "opencode" | "oc" => HarnessKind::OpenCode,
         "goose" => HarnessKind::Goose,
+        "amp-code" | "amp" | "ampcode" => HarnessKind::AmpCode,
         _ => return None,
     };
     Some(Harness::new(kind))
@@ -23,7 +24,7 @@ fn get_manager() -> Option<ProfileManager> {
 pub fn list_profiles(harness_name: &str) {
     let Some(harness) = resolve_harness(harness_name) else {
         eprintln!("Unknown harness: {harness_name}");
-        eprintln!("Valid options: claude-code, opencode, goose");
+        eprintln!("Valid options: claude-code, opencode, goose, amp-code");
         return;
     };
 
