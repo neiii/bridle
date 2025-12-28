@@ -330,14 +330,14 @@ impl ProfileManager {
             None => return Ok(Vec::new()),
         };
 
-        let profile_mcp_path = profile_path.join(mcp_filename);
+        let profile_mcp_path = profile_path.join(&mcp_filename);
 
         if !profile_mcp_path.exists() {
             return Ok(Vec::new());
         }
 
         let content = std::fs::read_to_string(&profile_mcp_path)?;
-        let servers = harness.parse_mcp_servers(&content)?;
+        let servers = harness.parse_mcp_servers(&content, &mcp_filename)?;
         Ok(servers
             .into_iter()
             .map(|(name, enabled)| McpServerInfo { name, enabled })
@@ -803,7 +803,11 @@ mod tests {
             None
         }
 
-        fn parse_mcp_servers(&self, _content: &str) -> Result<Vec<(String, bool)>> {
+        fn parse_mcp_servers(
+            &self,
+            _content: &str,
+            _filename: &str,
+        ) -> Result<Vec<(String, bool)>> {
             Ok(vec![])
         }
     }

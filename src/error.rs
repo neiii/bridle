@@ -53,4 +53,8 @@ pub enum Error {
     /// Harness error.
     #[error(transparent)]
     Harness(#[from] harness_locate::Error),
+
+    /// YAML parsing error.
+    #[error(transparent)]
+    Yaml(#[from] serde_yaml::Error),
 }

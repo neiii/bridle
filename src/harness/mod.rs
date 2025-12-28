@@ -20,7 +20,7 @@ pub trait HarnessConfig {
     fn config_dir(&self) -> Result<PathBuf>;
     fn installation_status(&self) -> Result<InstallationStatus>;
     fn mcp_filename(&self) -> Option<String>;
-    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<(String, bool)>>;
+    fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>>;
 }
 
 fn mcp_server_enabled(server: &McpServer) -> bool {
@@ -58,8 +58,29 @@ impl HarnessConfig for harness_locate::Harness {
             .and_then(|n| n.into_string().ok())
     }
 
-    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<(String, bool)>> {
-        let parsed: serde_json::Value = serde_json::from_str(content)?;
+    fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>> {
+        let is_yaml = filename.ends_with(".yaml") || filename.ends_with(".yml");
+        let mut parsed: serde_json::Value = if is_yaml {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(content)?;
+            serde_json::to_value(yaml)?
+        } else {
+            serde_json::from_str(content)?
+        };
+
+        // For Goose, filter extensions to only include actual MCP server types
+        // (exclude builtin/platform which are Goose-internal, not MCP)
+        if self.id() == "goose"
+            && let Some(extensions) = parsed.get_mut("extensions")
+            && let Some(ext_obj) = extensions.as_object_mut()
+        {
+            let mcp_types = ["stdio", "sse", "http", "streamable_http"];
+            ext_obj.retain(|_, v| {
+                v.get("type")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| mcp_types.contains(&t))
+            });
+        }
+
         let servers: std::collections::HashMap<String, McpServer> =
             self.parse_mcp_config(&parsed)?;
         let mut result: Vec<(String, bool)> = servers
