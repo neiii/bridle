@@ -530,12 +530,29 @@ fn render_harness_pane(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_profile_compact(profile: &ProfileInfo) -> Line<'static> {
     let active_marker = if profile.is_active { "● " } else { "  " };
+
+    let mut summary_parts = Vec::new();
+    if let Some(model) = &profile.model {
+        let short_model = model
+            .split('/')
+            .next_back()
+            .unwrap_or(model)
+            .chars()
+            .take(25)
+            .collect::<String>();
+        summary_parts.push(short_model);
+    }
     let mcp_count = profile.mcp_servers.len();
-    let mcp_info = if mcp_count > 0 {
-        format!(" ({} MCP)", mcp_count)
-    } else {
+    if mcp_count > 0 {
+        summary_parts.push(format!("{} MCP", mcp_count));
+    }
+
+    let summary = if summary_parts.is_empty() {
         String::new()
+    } else {
+        format!(" — {}", summary_parts.join(", "))
     };
+
     let style = if profile.is_active {
         Style::default()
             .fg(Color::Green)
@@ -544,7 +561,7 @@ fn render_profile_compact(profile: &ProfileInfo) -> Line<'static> {
         Style::default()
     };
     Line::styled(
-        format!("{}{}{}", active_marker, profile.name, mcp_info),
+        format!("{}{}{}", active_marker, profile.name, summary),
         style,
     )
 }
