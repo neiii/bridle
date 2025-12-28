@@ -26,6 +26,13 @@ enum Pane {
     Profiles,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    #[default]
+    Normal,
+    CreatingProfile,
+}
+
 #[derive(Debug)]
 struct App {
     running: bool,
@@ -38,6 +45,8 @@ struct App {
     bridle_config: BridleConfig,
     manager: ProfileManager,
     show_help: bool,
+    input_mode: InputMode,
+    input_buffer: String,
 }
 
 impl App {
@@ -65,6 +74,8 @@ impl App {
             bridle_config,
             manager,
             show_help: false,
+            input_mode: InputMode::Normal,
+            input_buffer: String::new(),
         };
 
         app.refresh_profiles();
@@ -208,10 +219,6 @@ impl App {
         }
     }
 
-    fn create_new_profile(&mut self) {
-        self.status_message = Some("Use CLI: bridle profile create <harness> <name>".to_string());
-    }
-
     fn switch_to_selected(&mut self) {
         let Some(kind) = self.selected_harness() else {
             return;
@@ -260,6 +267,13 @@ impl App {
             return;
         }
 
+        match self.input_mode {
+            InputMode::Normal => self.handle_normal_key(key),
+            InputMode::CreatingProfile => self.handle_input_key(key),
+        }
+    }
+
+    fn handle_normal_key(&mut self, key: KeyCode) {
         match key {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('?') => self.show_help = true,
@@ -286,7 +300,11 @@ impl App {
                 self.refresh_profiles();
                 self.status_message = Some("Refreshed".to_string());
             }
-            KeyCode::Char('n') => self.create_new_profile(),
+            KeyCode::Char('n') => {
+                self.input_mode = InputMode::CreatingProfile;
+                self.input_buffer.clear();
+                self.status_message = Some("Enter profile name (Esc to cancel)".to_string());
+            }
             KeyCode::Char('d') => {
                 if self.active_pane == Pane::Profiles {
                     self.delete_selected();
@@ -299,6 +317,61 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn handle_input_key(&mut self, key: KeyCode) {
+        match key {
+            KeyCode::Enter => self.create_profile_from_input(),
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+                self.input_buffer.clear();
+                self.status_message = None;
+            }
+            KeyCode::Backspace => {
+                self.input_buffer.pop();
+            }
+            KeyCode::Char(c) => {
+                self.input_buffer.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    fn create_profile_from_input(&mut self) {
+        let name = self.input_buffer.trim().to_string();
+        if name.is_empty() {
+            self.status_message = Some("Profile name cannot be empty".to_string());
+            return;
+        }
+
+        let Some(kind) = self.selected_harness() else {
+            self.status_message = Some("No harness selected".to_string());
+            self.input_mode = InputMode::Normal;
+            self.input_buffer.clear();
+            return;
+        };
+
+        let harness = Harness::new(kind);
+        let profile_name = match ProfileName::new(&name) {
+            Ok(pn) => pn,
+            Err(_) => {
+                self.status_message = Some("Invalid profile name".to_string());
+                return;
+            }
+        };
+
+        match self.manager.create_from_current(&harness, &profile_name) {
+            Ok(_) => {
+                self.status_message = Some(format!("Created profile '{}'", name));
+                self.refresh_profiles();
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Failed: {}", e));
+            }
+        }
+
+        self.input_mode = InputMode::Normal;
+        self.input_buffer.clear();
     }
 }
 
@@ -398,6 +471,16 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
+    let (list_area, input_area) = if app.input_mode == InputMode::CreatingProfile {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(3)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let items: Vec<ListItem> = app
         .profiles
         .iter()
@@ -441,7 +524,20 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol("> ");
 
-    frame.render_stateful_widget(list, area, &mut app.profile_state);
+    frame.render_stateful_widget(list, list_area, &mut app.profile_state);
+
+    if let Some(input_area) = input_area {
+        let input_text = format!("{}█", app.input_buffer);
+        let input = Paragraph::new(input_text)
+            .block(
+                Block::default()
+                    .title(" Profile name: ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
+            .style(Style::default().fg(Color::White));
+        frame.render_widget(input, input_area);
+    }
 }
 
 fn render_help_modal(frame: &mut Frame, area: Rect) {
