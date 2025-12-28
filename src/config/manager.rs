@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use chrono::Local;
-use get_harness::InstallationStatus;
+use get_harness::{DirectoryStructure, Harness, InstallationStatus, Scope};
 
 use super::BridleConfig;
 use super::profile_name::ProfileName;
@@ -266,6 +266,71 @@ impl ProfileManager {
         })
     }
 
+    pub fn show_profile_full(
+        &self,
+        harness: &Harness,
+        harness_config: &dyn HarnessConfig,
+        name: &ProfileName,
+    ) -> Result<ProfileInfo> {
+        let path = self.profile_path(harness_config, name);
+
+        if !path.exists() {
+            return Err(Error::ProfileNotFound(name.as_str().to_string()));
+        }
+
+        let harness_id = harness_config.id().to_string();
+        let is_active = BridleConfig::load()
+            .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
+            .unwrap_or(false);
+
+        let mcp_servers = self.extract_mcp_servers(harness_config, &path)?;
+        let theme = self.extract_theme(harness_config, &path);
+        let model = self.extract_model(harness_config, &path);
+
+        let mut extraction_errors = Vec::new();
+
+        let (skills, err) = self.extract_skills(harness, &path);
+        if let Some(e) = err {
+            extraction_errors.push(e);
+        }
+
+        let (commands, err) = self.extract_commands(harness, &path);
+        if let Some(e) = err {
+            extraction_errors.push(e);
+        }
+
+        let (plugins, err) = self.extract_plugins(harness, &path);
+        if let Some(e) = err {
+            extraction_errors.push(e);
+        }
+
+        let (agents, err) = self.extract_agents(harness, &path);
+        if let Some(e) = err {
+            extraction_errors.push(e);
+        }
+
+        let (rules_file, err) = self.extract_rules_file(harness, &path);
+        if let Some(e) = err {
+            extraction_errors.push(e);
+        }
+
+        Ok(ProfileInfo {
+            name: name.as_str().to_string(),
+            harness_id,
+            is_active,
+            path,
+            mcp_servers,
+            skills,
+            commands,
+            plugins,
+            agents,
+            rules_file,
+            theme,
+            model,
+            extraction_errors,
+        })
+    }
+
     fn extract_mcp_servers(
         &self,
         harness: &dyn HarnessConfig,
@@ -355,6 +420,198 @@ impl ProfileManager {
             .get("model")
             .and_then(|v| v.as_str())
             .map(String::from)
+    }
+
+    fn extract_skills(
+        &self,
+        harness: &Harness,
+        profile_path: &std::path::Path,
+    ) -> (ResourceSummary, Option<String>) {
+        match harness.skills(&Scope::Global) {
+            Ok(Some(dir)) => (
+                Self::extract_resource_summary(profile_path, "skills", &dir.structure),
+                None,
+            ),
+            Ok(None) => (ResourceSummary::default(), None),
+            Err(e) => (ResourceSummary::default(), Some(format!("skills: {}", e))),
+        }
+    }
+
+    fn extract_commands(
+        &self,
+        harness: &Harness,
+        profile_path: &std::path::Path,
+    ) -> (ResourceSummary, Option<String>) {
+        match harness.commands(&Scope::Global) {
+            Ok(Some(dir)) => (
+                Self::extract_resource_summary(profile_path, "commands", &dir.structure),
+                None,
+            ),
+            Ok(None) => (ResourceSummary::default(), None),
+            Err(e) => (ResourceSummary::default(), Some(format!("commands: {}", e))),
+        }
+    }
+
+    fn extract_plugins(
+        &self,
+        harness: &Harness,
+        profile_path: &std::path::Path,
+    ) -> (Option<ResourceSummary>, Option<String>) {
+        match harness.plugins(&Scope::Global) {
+            Ok(Some(dir)) => (
+                Some(Self::extract_resource_summary(
+                    profile_path,
+                    "plugins",
+                    &dir.structure,
+                )),
+                None,
+            ),
+            Ok(None) => (None, None),
+            Err(e) => (None, Some(format!("plugins: {}", e))),
+        }
+    }
+
+    fn extract_agents(
+        &self,
+        harness: &Harness,
+        profile_path: &std::path::Path,
+    ) -> (Option<ResourceSummary>, Option<String>) {
+        match harness.agents(&Scope::Global) {
+            Ok(Some(dir)) => (
+                Some(Self::extract_resource_summary(
+                    profile_path,
+                    "agents",
+                    &dir.structure,
+                )),
+                None,
+            ),
+            Ok(None) => (None, None),
+            Err(e) => (None, Some(format!("agents: {}", e))),
+        }
+    }
+
+    fn extract_rules_file(
+        &self,
+        harness: &Harness,
+        profile_path: &std::path::Path,
+    ) -> (Option<PathBuf>, Option<String>) {
+        match harness.rules(&Scope::Global) {
+            Ok(Some(dir)) => {
+                let rules_path = match &dir.structure {
+                    DirectoryStructure::Flat { file_pattern } => {
+                        if file_pattern.contains('*') {
+                            Self::find_first_matching_file(profile_path, file_pattern)
+                        } else {
+                            let path = profile_path.join(file_pattern);
+                            if path.exists() { Some(path) } else { None }
+                        }
+                    }
+                    DirectoryStructure::Nested { file_name, .. } => {
+                        let path = profile_path.join(file_name);
+                        if path.exists() { Some(path) } else { None }
+                    }
+                };
+                (rules_path, None)
+            }
+            Ok(None) => (None, None),
+            Err(e) => (None, Some(format!("rules: {}", e))),
+        }
+    }
+
+    fn find_first_matching_file(dir: &std::path::Path, pattern: &str) -> Option<PathBuf> {
+        let mut matches: Vec<PathBuf> = std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .map(|e| e.path())
+            .filter(|p| Self::matches_pattern(p.file_name().and_then(|n| n.to_str()), pattern))
+            .collect();
+        matches.sort();
+        matches.into_iter().next()
+    }
+
+    fn matches_pattern(filename: Option<&str>, pattern: &str) -> bool {
+        let Some(name) = filename else { return false };
+        if pattern == "*" {
+            return true;
+        }
+        if let Some(suffix) = pattern.strip_prefix("*.") {
+            return name.ends_with(&format!(".{}", suffix));
+        }
+        if let Some(suffix) = pattern.strip_prefix('*') {
+            return name.ends_with(suffix);
+        }
+        if let Some(prefix) = pattern.strip_suffix('*') {
+            return name.starts_with(prefix);
+        }
+        name == pattern
+    }
+
+    fn extract_resource_summary(
+        base_path: &std::path::Path,
+        subdir: &str,
+        structure: &DirectoryStructure,
+    ) -> ResourceSummary {
+        let dir_path = base_path.join(subdir);
+
+        if !dir_path.exists() {
+            return ResourceSummary {
+                items: vec![],
+                directory_exists: false,
+            };
+        }
+
+        let items = match structure {
+            DirectoryStructure::Flat { file_pattern } => {
+                Self::list_files_matching(&dir_path, file_pattern)
+            }
+            DirectoryStructure::Nested {
+                subdir_pattern,
+                file_name,
+            } => Self::list_subdirs_with_file(&dir_path, subdir_pattern, file_name),
+        };
+
+        ResourceSummary {
+            items,
+            directory_exists: true,
+        }
+    }
+
+    fn list_files_matching(dir: &std::path::Path, pattern: &str) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .ok()
+            .map(|entries| {
+                let mut items: Vec<String> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+                    .filter(|e| Self::matches_pattern(e.file_name().to_str(), pattern))
+                    .filter_map(|e| e.path().file_stem()?.to_str().map(String::from))
+                    .collect();
+                items.sort();
+                items
+            })
+            .unwrap_or_default()
+    }
+
+    fn list_subdirs_with_file(
+        dir: &std::path::Path,
+        subdir_pattern: &str,
+        file_name: &str,
+    ) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .ok()
+            .map(|entries| {
+                let mut items: Vec<String> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                    .filter(|e| Self::matches_pattern(e.file_name().to_str(), subdir_pattern))
+                    .filter(|e| e.path().join(file_name).exists())
+                    .filter_map(|e| e.file_name().to_str().map(String::from))
+                    .collect();
+                items.sort();
+                items
+            })
+            .unwrap_or_default()
     }
 
     pub fn backups_dir(&self) -> PathBuf {
@@ -557,5 +814,54 @@ mod tests {
             fs::read_to_string(live_config.join("edited.txt")).unwrap(),
             "user edit"
         );
+    }
+
+    #[test]
+    fn list_files_matching_finds_files_with_extension() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path();
+
+        fs::write(dir.join("skill1.md"), "content").unwrap();
+        fs::write(dir.join("skill2.md"), "content").unwrap();
+        fs::write(dir.join("readme.txt"), "content").unwrap();
+        fs::create_dir(dir.join("subdir")).unwrap();
+
+        let result = ProfileManager::list_files_matching(dir, "*.md");
+
+        assert_eq!(result, vec!["skill1", "skill2"]);
+    }
+
+    #[test]
+    fn list_subdirs_with_file_finds_matching_dirs() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path();
+
+        fs::create_dir_all(dir.join("cmd1")).unwrap();
+        fs::write(dir.join("cmd1").join("index.md"), "content").unwrap();
+
+        fs::create_dir_all(dir.join("cmd2")).unwrap();
+        fs::write(dir.join("cmd2").join("index.md"), "content").unwrap();
+
+        fs::create_dir_all(dir.join("empty")).unwrap();
+
+        fs::write(dir.join("file.md"), "content").unwrap();
+
+        let result = ProfileManager::list_subdirs_with_file(dir, "*", "index.md");
+
+        assert_eq!(result, vec!["cmd1", "cmd2"]);
+    }
+
+    #[test]
+    fn extract_resource_summary_handles_nonexistent_dir() {
+        let temp = TempDir::new().unwrap();
+        let structure = DirectoryStructure::Flat {
+            file_pattern: "*.md".to_string(),
+        };
+
+        let result =
+            ProfileManager::extract_resource_summary(temp.path(), "nonexistent", &structure);
+
+        assert!(!result.directory_exists);
+        assert!(result.items.is_empty());
     }
 }
