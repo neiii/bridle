@@ -20,6 +20,7 @@ pub trait HarnessConfig {
     fn config_dir(&self) -> Result<PathBuf>;
     fn installation_status(&self) -> Result<InstallationStatus>;
     fn mcp_filename(&self) -> Option<String>;
+    fn mcp_config_path(&self) -> Option<PathBuf>;
     fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>>;
 }
 
@@ -56,6 +57,10 @@ impl HarnessConfig for harness_locate::Harness {
             .map(|r| r.file)
             .and_then(|f| f.file_name().map(|n| n.to_os_string()))
             .and_then(|n| n.into_string().ok())
+    }
+
+    fn mcp_config_path(&self) -> Option<PathBuf> {
+        self.mcp(&Scope::Global).ok().flatten().map(|r| r.file)
     }
 
     fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>> {

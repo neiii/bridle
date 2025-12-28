@@ -205,26 +205,102 @@ impl ProfileManager {
         Ok(path)
     }
 
+    /// Copies all config files for a harness.
+    ///
+    /// When `source_is_live` is true: copies from live config to profile directory.
+    /// When `source_is_live` is false: copies from profile directory to live config.
+    ///
+    /// Handles both files in `config_dir()` and the MCP config file (which may be
+    /// outside `config_dir()` for some harnesses like Claude Code).
+    fn copy_config_files(
+        harness: &dyn HarnessConfig,
+        source_is_live: bool,
+        profile_path: &std::path::Path,
+    ) -> Result<()> {
+        use std::collections::HashSet;
+
+        let config_dir = harness.config_dir()?;
+
+        // Track copied files to avoid duplicates (MCP might be inside config_dir)
+        let mut copied_files: HashSet<PathBuf> = HashSet::new();
+
+        if source_is_live {
+            // Copying from live config to profile
+            if config_dir.exists() {
+                for entry in std::fs::read_dir(&config_dir)? {
+                    let entry = entry?;
+                    if entry.file_type()?.is_file() {
+                        let dest = profile_path.join(entry.file_name());
+                        std::fs::copy(entry.path(), &dest)?;
+                        if let Ok(canonical) = entry.path().canonicalize() {
+                            copied_files.insert(canonical);
+                        }
+                    }
+                }
+            }
+
+            // Copy MCP config if it exists and wasn't already copied
+            if let Some(mcp_path) = harness.mcp_config_path() {
+                let dominated = mcp_path
+                    .canonicalize()
+                    .map(|c| copied_files.contains(&c))
+                    .unwrap_or(false);
+
+                if !dominated
+                    && mcp_path.exists()
+                    && mcp_path.is_file()
+                    && let Some(filename) = mcp_path.file_name()
+                {
+                    let dest = profile_path.join(filename);
+                    std::fs::copy(&mcp_path, dest)?;
+                }
+            }
+        } else {
+            // Copying from profile to live config
+            // First ensure config_dir exists
+            if !config_dir.exists() {
+                std::fs::create_dir_all(&config_dir)?;
+            }
+
+            // Determine MCP filename for special handling
+            let mcp_filename = harness
+                .mcp_config_path()
+                .and_then(|p| p.file_name().map(|f| f.to_os_string()));
+
+            // Copy profile files to appropriate destinations
+            for entry in std::fs::read_dir(profile_path)? {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    let filename = entry.file_name();
+
+                    // Check if this is the MCP file
+                    if let Some(ref mcp_name) = mcp_filename
+                        && &filename == mcp_name
+                    {
+                        // Restore MCP to its original location
+                        if let Some(mcp_path) = harness.mcp_config_path() {
+                            std::fs::copy(entry.path(), &mcp_path)?;
+                            continue;
+                        }
+                    }
+
+                    // Regular file goes to config_dir
+                    let dest = config_dir.join(&filename);
+                    std::fs::copy(entry.path(), dest)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn create_from_current(
         &self,
         harness: &dyn HarnessConfig,
         name: &ProfileName,
     ) -> Result<PathBuf> {
         let profile_path = self.create_profile(harness, name)?;
-        let source_dir = harness.config_dir()?;
-
-        if !source_dir.exists() {
-            return Ok(profile_path);
-        }
-
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                let dest = profile_path.join(entry.file_name());
-                std::fs::copy(entry.path(), dest)?;
-            }
-        }
-
+        Self::copy_config_files(harness, true, &profile_path)?;
         Ok(profile_path)
     }
 
@@ -679,8 +755,13 @@ impl ProfileManager {
 
     pub fn backup_current(&self, harness: &dyn HarnessConfig) -> Result<PathBuf> {
         let source_dir = harness.config_dir()?;
+        let has_config_dir = source_dir.exists();
+        let has_mcp = harness
+            .mcp_config_path()
+            .map(|p| p.exists())
+            .unwrap_or(false);
 
-        if !source_dir.exists() {
+        if !has_config_dir && !has_mcp {
             return Err(Error::NoConfigFound(format!(
                 "No config found for {}",
                 harness.id()
@@ -691,14 +772,7 @@ impl ProfileManager {
         let backup_path = self.backups_dir().join(harness.id()).join(&timestamp);
 
         std::fs::create_dir_all(&backup_path)?;
-
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                let dest = backup_path.join(entry.file_name());
-                std::fs::copy(entry.path(), dest)?;
-            }
-        }
+        Self::copy_config_files(harness, true, &backup_path)?;
 
         Ok(backup_path)
     }
@@ -710,7 +784,12 @@ impl ProfileManager {
         }
 
         let source_dir = harness.config_dir()?;
-        if !source_dir.exists() {
+        let has_config = source_dir.exists()
+            || harness
+                .mcp_config_path()
+                .map(|p| p.exists())
+                .unwrap_or(false);
+        if !has_config {
             return Ok(());
         }
 
@@ -721,14 +800,7 @@ impl ProfileManager {
             }
         }
 
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                let dest = profile_path.join(entry.file_name());
-                std::fs::copy(entry.path(), dest)?;
-            }
-        }
-
+        Self::copy_config_files(harness, true, &profile_path)?;
         Ok(())
     }
 
@@ -760,9 +832,19 @@ impl ProfileManager {
         }
         std::fs::create_dir_all(&temp_dir)?;
 
+        let mcp_path = harness.mcp_config_path();
+        let mcp_filename = mcp_path
+            .as_ref()
+            .and_then(|p| p.file_name().map(|n| n.to_os_string()));
+
         for entry in std::fs::read_dir(&profile_path)? {
             let entry = entry?;
             if entry.file_type()?.is_file() {
+                if let Some(ref mcp_name) = mcp_filename
+                    && entry.file_name() == *mcp_name
+                {
+                    continue;
+                }
                 let dest = temp_dir.join(entry.file_name());
                 std::fs::copy(entry.path(), dest)?;
             }
@@ -772,6 +854,15 @@ impl ProfileManager {
             std::fs::remove_dir_all(&target_dir)?;
         }
         std::fs::rename(&temp_dir, &target_dir)?;
+
+        if let Some(ref mcp_name) = mcp_filename
+            && let Some(ref mcp_dest) = mcp_path
+        {
+            let mcp_in_profile = profile_path.join(mcp_name);
+            if mcp_in_profile.exists() {
+                std::fs::copy(&mcp_in_profile, mcp_dest)?;
+            }
+        }
 
         let mut config = BridleConfig::load().unwrap_or_default();
         config.set_active_profile(harness.id(), name.as_str());
@@ -790,6 +881,7 @@ mod tests {
     struct MockHarness {
         id: String,
         config_dir: PathBuf,
+        mcp_path: Option<PathBuf>,
     }
 
     impl MockHarness {
@@ -797,7 +889,13 @@ mod tests {
             Self {
                 id: id.to_string(),
                 config_dir,
+                mcp_path: None,
             }
+        }
+
+        fn with_mcp(mut self, mcp_path: PathBuf) -> Self {
+            self.mcp_path = Some(mcp_path);
+            self
         }
     }
 
@@ -819,6 +917,10 @@ mod tests {
 
         fn mcp_filename(&self) -> Option<String> {
             None
+        }
+
+        fn mcp_config_path(&self) -> Option<PathBuf> {
+            self.mcp_path.clone()
         }
 
         fn parse_mcp_servers(
@@ -872,6 +974,69 @@ mod tests {
         assert_eq!(
             fs::read_to_string(live_config.join("edited.txt")).unwrap(),
             "user edit"
+        );
+    }
+
+    #[test]
+    fn create_from_current_copies_mcp_config() {
+        let temp = TempDir::new().unwrap();
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        let mcp_file = temp.path().join(".mcp.json");
+
+        fs::create_dir_all(&live_config).unwrap();
+        fs::write(live_config.join("config.txt"), "config content").unwrap();
+        fs::write(&mcp_file, r#"{"servers": {}}"#).unwrap();
+
+        let harness = MockHarness::new("test-harness", live_config).with_mcp(mcp_file.clone());
+        let manager = ProfileManager::new(profiles_dir);
+
+        let profile_name = ProfileName::new("test-profile").unwrap();
+        let profile_path = manager
+            .create_from_current(&harness, &profile_name)
+            .unwrap();
+
+        assert!(profile_path.join("config.txt").exists());
+        assert!(profile_path.join(".mcp.json").exists());
+        assert_eq!(
+            fs::read_to_string(profile_path.join(".mcp.json")).unwrap(),
+            r#"{"servers": {}}"#
+        );
+    }
+
+    #[test]
+    fn switch_profile_restores_mcp_config() {
+        let temp = TempDir::new().unwrap();
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        let mcp_file = temp.path().join(".mcp.json");
+
+        fs::create_dir_all(&live_config).unwrap();
+        fs::write(live_config.join("config.txt"), "config A").unwrap();
+        fs::write(&mcp_file, r#"{"servers": {"a": true}}"#).unwrap();
+
+        let harness =
+            MockHarness::new("test-harness", live_config.clone()).with_mcp(mcp_file.clone());
+        let manager = ProfileManager::new(profiles_dir);
+
+        let profile_a = ProfileName::new("profile-a").unwrap();
+        manager.create_from_current(&harness, &profile_a).unwrap();
+
+        fs::write(live_config.join("config.txt"), "config B").unwrap();
+        fs::write(&mcp_file, r#"{"servers": {"b": true}}"#).unwrap();
+
+        let profile_b = ProfileName::new("profile-b").unwrap();
+        manager.create_from_current(&harness, &profile_b).unwrap();
+
+        manager.switch_profile(&harness, &profile_a).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(live_config.join("config.txt")).unwrap(),
+            "config A"
+        );
+        assert_eq!(
+            fs::read_to_string(&mcp_file).unwrap(),
+            r#"{"servers": {"a": true}}"#
         );
     }
 
