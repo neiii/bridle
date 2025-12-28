@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Local;
-use get_harness::{Harness, McpServer, Scope};
+use get_harness::{Harness, InstallationStatus, McpServer, Scope};
 
 use super::BridleConfig;
 use super::profile_name::ProfileName;
@@ -108,6 +108,27 @@ impl ProfileManager {
         }
 
         Ok(profile_path)
+    }
+
+    /// Creates a "default" profile from current harness config if it doesn't exist.
+    ///
+    /// Returns `Ok(true)` if profile was created, `Ok(false)` if it already existed
+    /// or if the harness is not fully installed.
+    ///
+    /// Only creates for `FullyInstalled` harnesses (both binary and config exist).
+    pub fn create_from_current_if_missing(&self, harness: &Harness) -> Result<bool> {
+        let status = harness.installation_status()?;
+        if !matches!(status, InstallationStatus::FullyInstalled { .. }) {
+            return Ok(false);
+        }
+
+        let name = ProfileName::new("default").expect("'default' is a valid profile name");
+        if self.profile_exists(harness, &name) {
+            return Ok(false);
+        }
+
+        self.create_from_current(harness, &name)?;
+        Ok(true)
     }
 
     pub fn delete_profile(&self, harness: &Harness, name: &ProfileName) -> Result<()> {

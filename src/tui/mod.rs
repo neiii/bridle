@@ -45,6 +45,11 @@ impl App {
         let profiles_dir = BridleConfig::profiles_dir()?;
         let manager = ProfileManager::new(profiles_dir);
         let harnesses = HarnessKind::ALL.to_vec();
+
+        for kind in &harnesses {
+            let harness = Harness::new(*kind);
+            let _ = manager.create_from_current_if_missing(&harness);
+        }
         let mut harness_state = ListState::default();
         harness_state.select(Some(0));
 

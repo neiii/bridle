@@ -1,6 +1,8 @@
 //! Init command implementation.
 
-use crate::config::BridleConfig;
+use get_harness::{Harness, HarnessKind};
+
+use crate::config::{BridleConfig, ProfileManager};
 
 pub fn run_init() {
     let config_dir = match BridleConfig::config_dir() {
@@ -39,6 +41,12 @@ pub fn run_init() {
     if let Err(e) = config.save() {
         eprintln!("Failed to write config: {e}");
         return;
+    }
+
+    let manager = ProfileManager::new(profiles_dir);
+    for kind in HarnessKind::ALL {
+        let harness = Harness::new(*kind);
+        let _ = manager.create_from_current_if_missing(&harness);
     }
 
     println!("Initialized bridle at {}", config_dir.display());
