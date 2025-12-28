@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use get_harness::{Harness, HarnessKind};
+use get_harness::{Harness, HarnessKind, InstallationStatus};
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -83,7 +83,24 @@ impl App {
     }
 
     fn selected_harness(&self) -> Option<HarnessKind> {
-        self.harness_state.selected().map(|i| self.harnesses[i])
+        self.harness_state
+            .selected()
+            .and_then(|i| self.harnesses.get(i).copied())
+    }
+
+    fn empty_state_message(&self) -> &'static str {
+        let Some(kind) = self.selected_harness() else {
+            return "No harness selected";
+        };
+        let harness = Harness::new(kind);
+        match harness.installation_status() {
+            Ok(InstallationStatus::NotInstalled) => "Harness not installed",
+            Ok(InstallationStatus::BinaryOnly { .. }) => "Run harness once to generate config",
+            Ok(InstallationStatus::ConfigOnly { .. }) => "No binary found - reinstall harness",
+            Ok(InstallationStatus::FullyInstalled { .. }) => "Press 'n' to create a profile",
+            Ok(_) => "Press 'n' to create a profile",
+            Err(_) => "Unable to detect harness status",
+        }
     }
 
     fn refresh_profiles(&mut self) {
@@ -480,6 +497,25 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
     } else {
         (area, None)
     };
+
+    if app.profiles.is_empty() && app.input_mode != InputMode::CreatingProfile {
+        let message = app.empty_state_message();
+        let block = Block::default()
+            .title(match app.selected_harness() {
+                Some(kind) => format!(" Profiles ({:?}) ", kind),
+                None => " Profiles ".to_string(),
+            })
+            .borders(Borders::ALL)
+            .border_style(border_style);
+        frame.render_widget(block, area);
+
+        let inner = area.inner(ratatui::layout::Margin::new(2, 2));
+        let paragraph = Paragraph::new(message)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(paragraph, inner);
+        return;
+    }
 
     let items: Vec<ListItem> = app
         .profiles
