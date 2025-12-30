@@ -4,9 +4,12 @@
 #![allow(unused_imports)]
 
 mod bridle;
+mod jsonc;
 mod manager;
 mod profile_name;
+mod types;
 
 pub use bridle::{BridleConfig, TuiConfig, ViewPreference};
-pub use manager::{McpServerInfo, ProfileInfo, ProfileManager, ResourceSummary};
+pub use manager::ProfileManager;
 pub use profile_name::{InvalidProfileName, ProfileName};
+pub use types::{McpServerInfo, ProfileInfo, ResourceSummary};
