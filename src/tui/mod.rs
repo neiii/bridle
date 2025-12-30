@@ -317,7 +317,10 @@ impl App {
             return;
         }
 
-        match self.manager.switch_profile(&harness, &profile_name) {
+        match self
+            .manager
+            .switch_profile_with_resources(&harness, Some(&harness), &profile_name)
+        {
             Ok(_) => {
                 self.bridle_config = BridleConfig::load().unwrap_or_default();
                 self.status_message = Some(format!("Switched to '{}'", profile.name));

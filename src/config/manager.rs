@@ -489,6 +489,14 @@ impl ProfileManager {
             .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
             .unwrap_or(false);
 
+        // When profile is active, resources (commands, agents, skills) are in the global
+        // harness config directory, not the profile directory. Use appropriate lookup path.
+        let resource_lookup_path = if is_active {
+            harness.config_dir().unwrap_or_else(|_| path.clone())
+        } else {
+            path.clone()
+        };
+
         let theme = self.extract_theme(harness, &path);
         let model = self.extract_model(harness, &path);
 
@@ -502,27 +510,27 @@ impl ProfileManager {
             }
         };
 
-        let (skills, err) = self.extract_skills(harness, &path);
+        let (skills, err) = self.extract_skills(harness, &resource_lookup_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (commands, err) = self.extract_commands(harness, &path);
+        let (commands, err) = self.extract_commands(harness, &resource_lookup_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (plugins, err) = self.extract_plugins(harness, &path);
+        let (plugins, err) = self.extract_plugins(harness, &resource_lookup_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (agents, err) = self.extract_agents(harness, &path);
+        let (agents, err) = self.extract_agents(harness, &resource_lookup_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (rules_file, err) = self.extract_rules_file(harness, &path);
+        let (rules_file, err) = self.extract_rules_file(harness, &resource_lookup_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
@@ -733,7 +741,13 @@ impl ProfileManager {
         harness: &Harness,
         profile_path: &std::path::Path,
     ) -> (ResourceSummary, Option<String>) {
-        match harness.commands(&Scope::Global) {
+        // Goose uses "recipes" instead of commands
+        if harness.id() == "goose" {
+            return self.extract_goose_recipes(profile_path);
+        }
+
+        // For OpenCode, merge directory-based and config-based commands
+        let dir_result = match harness.commands(&Scope::Global) {
             Ok(Some(dir)) => {
                 let subdir = dir
                     .path
@@ -747,7 +761,117 @@ impl ProfileManager {
             }
             Ok(None) => (ResourceSummary::default(), None),
             Err(e) => (ResourceSummary::default(), Some(format!("commands: {}", e))),
+        };
+
+        // OpenCode also supports commands defined in config
+        if harness.id() == "opencode" {
+            let (config_summary, config_err) =
+                self.extract_commands_from_opencode_config(profile_path);
+            let mut merged_items = dir_result.0.items;
+            merged_items.extend(config_summary.items);
+            merged_items.sort();
+            merged_items.dedup();
+            return (
+                ResourceSummary {
+                    items: merged_items,
+                    directory_exists: dir_result.0.directory_exists
+                        || config_summary.directory_exists,
+                },
+                dir_result.1.or(config_err),
+            );
         }
+
+        dir_result
+    }
+
+    fn extract_commands_from_opencode_config(
+        &self,
+        profile_path: &std::path::Path,
+    ) -> (ResourceSummary, Option<String>) {
+        let config_path = profile_path.join("opencode.jsonc");
+        if !config_path.exists() {
+            return (ResourceSummary::default(), None);
+        }
+
+        let content = match std::fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e) => return (ResourceSummary::default(), Some(format!("commands: {}", e))),
+        };
+
+        let clean_json = strip_jsonc_comments(&content);
+        let parsed: serde_json::Value = match serde_json::from_str(&clean_json) {
+            Ok(v) => v,
+            Err(e) => return (ResourceSummary::default(), Some(format!("commands: {}", e))),
+        };
+
+        let commands = parsed
+            .get("command")
+            .and_then(|v| v.as_object())
+            .map(|obj| obj.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        (
+            ResourceSummary {
+                items: commands,
+                directory_exists: false, // Config-based, not directory
+            },
+            None,
+        )
+    }
+
+    fn extract_goose_recipes(
+        &self,
+        profile_path: &std::path::Path,
+    ) -> (ResourceSummary, Option<String>) {
+        // Goose supports both "commands" and "recipes" directories
+        let commands_dir = profile_path.join("commands");
+        let recipes_dir = profile_path.join("recipes");
+        let target_dir = if commands_dir.exists() {
+            commands_dir
+        } else if recipes_dir.exists() {
+            recipes_dir
+        } else {
+            return (ResourceSummary::default(), None);
+        };
+
+        let entries = match std::fs::read_dir(&target_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                return (
+                    ResourceSummary {
+                        items: Vec::new(),
+                        directory_exists: true,
+                    },
+                    Some(format!("recipes: {}", e)),
+                );
+            }
+        };
+
+        let items: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let path = e.path();
+                path.is_file()
+                    && matches!(
+                        path.extension().and_then(|ext| ext.to_str()),
+                        Some("yaml") | Some("yml") | Some("json") | Some("md")
+                    )
+            })
+            .filter_map(|e| {
+                e.path()
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .map(String::from)
+            })
+            .collect();
+
+        (
+            ResourceSummary {
+                items,
+                directory_exists: true,
+            },
+            None,
+        )
     }
 
     fn extract_plugins(
@@ -829,7 +953,7 @@ impl ProfileManager {
         harness: &Harness,
         profile_path: &std::path::Path,
     ) -> (Option<ResourceSummary>, Option<String>) {
-        match harness.agents(&Scope::Global) {
+        let dir_result = match harness.agents(&Scope::Global) {
             Ok(Some(dir)) => {
                 let subdir = dir
                     .path
@@ -838,23 +962,89 @@ impl ProfileManager {
                     .unwrap_or("agents");
                 let summary = Self::extract_resource_summary(profile_path, subdir, &dir.structure);
                 if !summary.items.is_empty() {
-                    return (Some(summary), None);
+                    (Some(summary), None)
+                } else {
+                    let md_summary = Self::extract_resource_summary(
+                        profile_path,
+                        subdir,
+                        &DirectoryStructure::Flat {
+                            file_pattern: "*.md".to_string(),
+                        },
+                    );
+                    if !md_summary.items.is_empty() || md_summary.directory_exists {
+                        (Some(md_summary), None)
+                    } else {
+                        (Some(summary), None)
+                    }
                 }
-                let md_summary = Self::extract_resource_summary(
-                    profile_path,
-                    subdir,
-                    &DirectoryStructure::Flat {
-                        file_pattern: "*.md".to_string(),
-                    },
-                );
-                if !md_summary.items.is_empty() || md_summary.directory_exists {
-                    return (Some(md_summary), None);
-                }
-                (Some(summary), None)
             }
             Ok(None) => self.extract_agents_fallback(profile_path),
             Err(e) => (None, Some(format!("agents: {}", e))),
+        };
+
+        // OpenCode: merge directory-based and config-based agents
+        if harness.id() == "opencode" {
+            let (config_summary, config_err) =
+                self.extract_agents_from_opencode_config(profile_path);
+            if !config_summary.items.is_empty() {
+                let mut merged_items = dir_result
+                    .0
+                    .as_ref()
+                    .map(|s| s.items.clone())
+                    .unwrap_or_default();
+                merged_items.extend(config_summary.items);
+                merged_items.sort();
+                merged_items.dedup();
+                return (
+                    Some(ResourceSummary {
+                        items: merged_items,
+                        directory_exists: dir_result
+                            .0
+                            .as_ref()
+                            .map(|s| s.directory_exists)
+                            .unwrap_or(false),
+                    }),
+                    dir_result.1.or(config_err),
+                );
+            }
         }
+
+        dir_result
+    }
+
+    fn extract_agents_from_opencode_config(
+        &self,
+        profile_path: &std::path::Path,
+    ) -> (ResourceSummary, Option<String>) {
+        let config_path = profile_path.join("opencode.jsonc");
+        if !config_path.exists() {
+            return (ResourceSummary::default(), None);
+        }
+
+        let content = match std::fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e) => return (ResourceSummary::default(), Some(format!("agents: {}", e))),
+        };
+
+        let clean_json = strip_jsonc_comments(&content);
+        let parsed: serde_json::Value = match serde_json::from_str(&clean_json) {
+            Ok(v) => v,
+            Err(e) => return (ResourceSummary::default(), Some(format!("agents: {}", e))),
+        };
+
+        let agents = parsed
+            .get("agent")
+            .and_then(|v| v.as_object())
+            .map(|obj| obj.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        (
+            ResourceSummary {
+                items: agents,
+                directory_exists: false,
+            },
+            None,
+        )
     }
 
     fn extract_agents_fallback(
