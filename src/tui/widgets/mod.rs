@@ -8,7 +8,7 @@ mod card_grid;
 #[cfg(feature = "tui-cards")]
 mod profile_card;
 
-pub use detail_pane::DetailPane;
+pub use detail_pane::{DetailPane, render_profile_details};
 pub use harness_tabs::HarnessTabs;
 pub use profile_table::ProfileTable;
 pub use status_bar::StatusBar;

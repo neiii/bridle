@@ -1,50 +1,31 @@
 use harness_locate::{Harness, HarnessKind};
 
 use crate::config::BridleConfig;
+use crate::error::{Error, Result};
 use crate::harness::HarnessConfig;
 
-pub fn set_config(key: &str, value: &str) {
-    let result = match key {
+pub fn set_config(key: &str, value: &str) -> Result<()> {
+    match key {
         "profile_marker" => set_profile_marker(value),
-        _ => {
-            eprintln!("Unknown setting: {}", key);
-            eprintln!("Available settings: profile_marker");
-            return;
-        }
-    };
-
-    if let Err(e) = result {
-        eprintln!("Failed to set {}: {}", key, e);
+        _ => Err(Error::UnknownSetting(key.to_string())),
     }
 }
 
-pub fn get_config(key: &str) {
-    let config = match BridleConfig::load() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Failed to load config: {}", e);
-            return;
-        }
-    };
+pub fn get_config(key: &str) -> Result<()> {
+    let config = BridleConfig::load()?;
 
     match key {
         "profile_marker" => println!("{}", config.profile_marker),
-        _ => {
-            eprintln!("Unknown setting: {}", key);
-            eprintln!("Available settings: profile_marker");
-        }
+        _ => return Err(Error::UnknownSetting(key.to_string())),
     }
+    Ok(())
 }
 
-fn set_profile_marker(value: &str) -> crate::error::Result<()> {
+fn set_profile_marker(value: &str) -> Result<()> {
     let enabled = match value.to_lowercase().as_str() {
         "true" | "1" | "yes" | "on" => true,
         "false" | "0" | "no" | "off" => false,
-        _ => {
-            eprintln!("Invalid value for profile_marker: {}", value);
-            eprintln!("Use: true/false, yes/no, on/off, 1/0");
-            return Ok(());
-        }
+        _ => return Err(Error::InvalidValue(value.to_string())),
     };
 
     let mut config = BridleConfig::load().unwrap_or_default();

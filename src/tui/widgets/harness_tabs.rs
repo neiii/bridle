@@ -92,12 +92,14 @@ impl Widget for HarnessTabs<'_> {
             })
             .collect();
 
+        let border_style = Style::default().fg(Color::DarkGray);
+
         let tabs = Tabs::new(titles)
             .block(
                 Block::default()
                     .title(" Harnesses ")
                     .borders(Borders::ALL)
-                    .border_style(Theme::border_active()),
+                    .border_style(border_style),
             )
             .select(self.selected)
             .style(Style::default())

@@ -1,3 +1,7 @@
+//! Terminal user interface for bridle.
+//!
+//! Provides an interactive TUI for browsing harnesses, profiles, and their configurations.
+
 mod theme;
 mod views;
 mod widgets;
@@ -5,7 +9,10 @@ mod widgets;
 use std::io::{self, Stdout};
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEvent,
+        MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -28,10 +35,31 @@ use widgets::{DetailPane, HarnessTabs, ProfileTable, StatusBar};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+fn harness_id(kind: &HarnessKind) -> &'static str {
+    match kind {
+        HarnessKind::ClaudeCode => "claude-code",
+        HarnessKind::OpenCode => "opencode",
+        HarnessKind::Goose => "goose",
+        HarnessKind::AmpCode => "amp-code",
+        _ => "unknown",
+    }
+}
+
+fn harness_name(kind: &HarnessKind) -> &'static str {
+    match kind {
+        HarnessKind::ClaudeCode => "Claude Code",
+        HarnessKind::OpenCode => "OpenCode",
+        HarnessKind::Goose => "Goose",
+        HarnessKind::AmpCode => "AMP Code",
+        _ => "Unknown",
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pane {
     Harnesses,
     Profiles,
+    Details,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +88,11 @@ struct App {
     input_mode: InputMode,
     input_buffer: String,
     needs_full_redraw: bool,
+    detail_scroll: u16,
+    detail_content_height: u16,
+    harness_area: Option<Rect>,
+    profile_area: Option<Rect>,
+    detail_area: Option<Rect>,
 }
 
 impl App {
@@ -74,12 +107,16 @@ impl App {
             let _ = manager.create_from_current_if_missing(&harness);
         }
         let mut harness_state = ListState::default();
-        harness_state.select(Some(0));
+        let default_idx = bridle_config
+            .default_harness()
+            .and_then(|id| harnesses.iter().position(|h| harness_id(h) == id))
+            .unwrap_or(0);
+        harness_state.select(Some(default_idx));
 
         let mut app = Self {
             running: true,
             view_mode: ViewMode::default(),
-            active_pane: Pane::Harnesses,
+            active_pane: Pane::Profiles,
             harnesses,
             harness_state,
             profiles: Vec::new(),
@@ -93,6 +130,11 @@ impl App {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             needs_full_redraw: false,
+            detail_scroll: 0,
+            detail_content_height: 0,
+            harness_area: None,
+            profile_area: None,
+            detail_area: None,
         };
 
         app.refresh_profiles();
@@ -139,6 +181,7 @@ impl App {
         self.profile_state.select(None);
         self.profile_table_state.select(None);
         self.expanded_profile = None;
+        self.detail_scroll = 0;
 
         if let Some(kind) = self.selected_harness() {
             let harness = Harness::new(kind);
@@ -154,6 +197,7 @@ impl App {
             if !self.profiles.is_empty() {
                 self.profile_state.select(Some(0));
                 self.profile_table_state.select(Some(0));
+                self.update_detail_content_height();
             }
         }
     }
@@ -192,6 +236,8 @@ impl App {
         };
         self.profile_state.select(Some(i));
         self.profile_table_state.select(Some(i));
+        self.detail_scroll = 0;
+        self.update_detail_content_height();
     }
 
     fn prev_profile(&mut self) {
@@ -210,6 +256,93 @@ impl App {
         };
         self.profile_state.select(Some(i));
         self.profile_table_state.select(Some(i));
+        self.detail_scroll = 0;
+        self.update_detail_content_height();
+    }
+
+    fn update_detail_content_height(&mut self) {
+        self.detail_content_height = if let Some(idx) = self.profile_state.selected() {
+            let profile = &self.profiles[idx];
+            let lines = widgets::render_profile_details(profile);
+            lines.len() as u16
+        } else {
+            0
+        };
+    }
+
+    fn scroll_detail_up(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_sub(1);
+    }
+
+    fn scroll_detail_down(&mut self) {
+        let viewport_height = self
+            .detail_area
+            .map(|a| a.height.saturating_sub(2))
+            .unwrap_or(10);
+        let max_scroll = self.detail_content_height.saturating_sub(viewport_height);
+        if self.detail_scroll < max_scroll {
+            self.detail_scroll = self.detail_scroll.saturating_add(1);
+        }
+    }
+
+    fn handle_mouse(&mut self, event: MouseEvent) {
+        let pos = ratatui::layout::Position::new(event.column, event.row);
+
+        match event.kind {
+            MouseEventKind::Down(_) => {
+                if self.harness_area.is_some_and(|a| a.contains(pos)) {
+                    let area = self.harness_area.unwrap();
+
+                    if self.view_mode == ViewMode::Dashboard {
+                        let inner_x = event.column.saturating_sub(area.x).saturating_sub(2);
+                        let tab_width = 15;
+                        let idx = (inner_x / tab_width) as usize;
+                        if idx < self.harnesses.len() {
+                            self.harness_state.select(Some(idx));
+                            self.refresh_profiles();
+                        }
+                    } else {
+                        let inner_y = event.row.saturating_sub(area.y).saturating_sub(1);
+                        let idx = inner_y as usize;
+                        if idx < self.harnesses.len() {
+                            self.harness_state.select(Some(idx));
+                            self.refresh_profiles();
+                        }
+                    }
+                } else if self.profile_area.is_some_and(|a| a.contains(pos)) {
+                    self.active_pane = Pane::Profiles;
+                    let area = self.profile_area.unwrap();
+                    let inner_y = event.row.saturating_sub(area.y).saturating_sub(2);
+                    let idx = inner_y as usize;
+                    if idx < self.profiles.len() {
+                        self.profile_state.select(Some(idx));
+                        self.profile_table_state.select(Some(idx));
+                        self.detail_scroll = 0;
+                    }
+                } else if self.detail_area.is_some_and(|a| a.contains(pos)) {
+                    self.active_pane = Pane::Details;
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                if self.detail_area.is_some_and(|a| a.contains(pos)) {
+                    self.scroll_detail_up();
+                } else if self.profile_area.is_some_and(|a| a.contains(pos)) {
+                    self.prev_profile();
+                } else if self.harness_area.is_some_and(|a| a.contains(pos)) {
+                    self.prev_harness();
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                if self.detail_area.is_some_and(|a| a.contains(pos)) {
+                    self.scroll_detail_down();
+                } else if self.profile_area.is_some_and(|a| a.contains(pos)) {
+                    self.next_profile();
+                } else if self.harness_area.is_some_and(|a| a.contains(pos)) {
+                    self.next_harness();
+                }
+            }
+            _ => {}
+        }
     }
 
     fn delete_selected(&mut self) {
@@ -317,7 +450,10 @@ impl App {
             return;
         }
 
-        match self.manager.switch_profile(&harness, &profile_name) {
+        match self
+            .manager
+            .switch_profile_with_resources(&harness, Some(&harness), &profile_name)
+        {
             Ok(_) => {
                 self.bridle_config = BridleConfig::load().unwrap_or_default();
                 self.status_message = Some(format!("Switched to '{}'", profile.name));
@@ -362,24 +498,38 @@ impl App {
             }
             KeyCode::Tab => {
                 self.active_pane = match self.active_pane {
-                    Pane::Harnesses => Pane::Profiles,
-                    Pane::Profiles => Pane::Harnesses,
+                    Pane::Harnesses | Pane::Profiles => Pane::Details,
+                    Pane::Details => Pane::Profiles,
                 };
             }
             KeyCode::Up | KeyCode::Char('k') => match self.view_mode {
-                ViewMode::Dashboard => self.prev_profile(),
+                ViewMode::Dashboard => {
+                    if self.active_pane == Pane::Details {
+                        self.scroll_detail_up();
+                    } else {
+                        self.prev_profile();
+                    }
+                }
                 ViewMode::Legacy => match self.active_pane {
                     Pane::Harnesses => self.prev_harness(),
                     Pane::Profiles => self.prev_profile(),
+                    Pane::Details => self.scroll_detail_up(),
                 },
                 #[cfg(feature = "tui-cards")]
                 ViewMode::Cards => self.prev_profile(),
             },
             KeyCode::Down | KeyCode::Char('j') => match self.view_mode {
-                ViewMode::Dashboard => self.next_profile(),
+                ViewMode::Dashboard => {
+                    if self.active_pane == Pane::Details {
+                        self.scroll_detail_down();
+                    } else {
+                        self.next_profile();
+                    }
+                }
                 ViewMode::Legacy => match self.active_pane {
                     Pane::Harnesses => self.next_harness(),
                     Pane::Profiles => self.next_profile(),
+                    Pane::Details => self.scroll_detail_down(),
                 },
                 #[cfg(feature = "tui-cards")]
                 ViewMode::Cards => self.next_profile(),
@@ -441,6 +591,20 @@ impl App {
                     || self.active_pane == Pane::Profiles
                 {
                     self.edit_selected();
+                }
+            }
+            KeyCode::Char('f') => {
+                if let Some(harness_kind) = self.selected_harness() {
+                    let id = harness_id(&harness_kind);
+                    self.bridle_config.set_default_harness(Some(id));
+                    if let Err(e) = self.bridle_config.save() {
+                        self.status_message = Some(format!("Failed to save: {}", e));
+                    } else {
+                        self.status_message = Some(format!(
+                            "Set {} as default harness",
+                            harness_name(&harness_kind)
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -522,27 +686,31 @@ impl App {
 fn init_terminal() -> io::Result<Tui> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     Terminal::new(backend)
 }
 
 fn restore_terminal(terminal: &mut Tui) -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }
 
 fn restore_terminal_for_editor() -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
     Ok(())
 }
 
 fn reinit_terminal_after_editor() -> io::Result<()> {
     enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen)?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     Ok(())
 }
 
@@ -570,6 +738,9 @@ fn render_legacy_view(frame: &mut Frame, app: &mut App) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(chunks[0]);
 
+    app.harness_area = Some(main_chunks[0]);
+    app.profile_area = Some(main_chunks[1]);
+    app.detail_area = None;
     render_harness_pane(frame, app, main_chunks[0]);
     render_profile_pane(frame, app, main_chunks[1]);
     render_status_bar(frame, app, chunks[1]);
@@ -585,6 +756,7 @@ fn render_dashboard_view(frame: &mut Frame, app: &mut App) {
         ])
         .split(frame.area());
 
+    app.harness_area = Some(chunks[0]);
     render_harness_tabs(frame, app, chunks[0]);
 
     let content_chunks = Layout::default()
@@ -592,6 +764,8 @@ fn render_dashboard_view(frame: &mut Frame, app: &mut App) {
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(chunks[1]);
 
+    app.profile_area = Some(content_chunks[0]);
+    app.detail_area = Some(content_chunks[1]);
     render_profile_table(frame, app, content_chunks[0]);
     render_detail_pane(frame, app, content_chunks[1]);
 
@@ -654,7 +828,7 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
-    let table = ProfileTable::new(&app.profiles);
+    let table = ProfileTable::new(&app.profiles).focused(app.active_pane == Pane::Profiles);
     frame.render_stateful_widget(table, area, &mut app.profile_table_state);
 }
 
@@ -664,7 +838,9 @@ fn render_detail_pane(frame: &mut Frame, app: &App, area: Rect) {
         .selected()
         .and_then(|i| app.profiles.get(i));
 
-    let detail = DetailPane::new(selected_profile);
+    let detail = DetailPane::new(selected_profile)
+        .focused(app.active_pane == Pane::Details)
+        .scroll(app.detail_scroll);
     frame.render_widget(detail, area);
 }
 
@@ -762,151 +938,8 @@ fn render_profile_compact(profile: &ProfileInfo) -> Line<'static> {
 }
 
 fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-
-    let active_marker = if profile.is_active { "● " } else { "  " };
-    lines.push(Line::from(vec![
-        Span::styled(
-            format!("{}{}", active_marker, profile.name),
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            " ─────────────────────────",
-            Style::default().fg(Color::Gray),
-        ),
-    ]));
-
-    #[derive(Clone)]
-    enum Section<'a> {
-        Theme(&'a str),
-        Model(&'a str),
-        Mcp(&'a [crate::config::McpServerInfo]),
-        Resources(&'static str, &'a crate::config::ResourceSummary),
-        Rules(&'a std::path::Path),
-        Error(&'a str),
-    }
-
-    let mut sections: Vec<Section> = Vec::new();
-
-    if let Some(ref theme) = profile.theme {
-        sections.push(Section::Theme(theme));
-    }
-    if let Some(ref model) = profile.model {
-        sections.push(Section::Model(model));
-    }
-    if !profile.mcp_servers.is_empty() {
-        sections.push(Section::Mcp(&profile.mcp_servers));
-    }
-    if let Some(ref plugins) = profile.plugins {
-        sections.push(Section::Resources("Plugins", plugins));
-    }
-    if let Some(ref agents) = profile.agents {
-        sections.push(Section::Resources("Agents", agents));
-    }
-    sections.push(Section::Resources("Skills", &profile.skills));
-    sections.push(Section::Resources("Commands", &profile.commands));
-    if let Some(ref rules) = profile.rules_file {
-        sections.push(Section::Rules(rules));
-    }
-    for error in &profile.extraction_errors {
-        sections.push(Section::Error(error));
-    }
-
-    let total = sections.len();
-    for (idx, section) in sections.iter().enumerate() {
-        let is_last = idx == total - 1;
-        let branch = if is_last { "└─" } else { "├─" };
-        let cont = if is_last { "   " } else { "│  " };
-
-        match section {
-            Section::Theme(theme) => {
-                lines.push(Line::styled(
-                    format!("  {} Theme: {}", branch, theme),
-                    Style::default().fg(Color::Gray),
-                ));
-            }
-            Section::Model(model) => {
-                lines.push(Line::styled(
-                    format!("  {} Model: {}", branch, model),
-                    Style::default().fg(Color::Gray),
-                ));
-            }
-            Section::Mcp(servers) => {
-                lines.push(Line::styled(
-                    format!("  {} MCP ({})", branch, servers.len()),
-                    Style::default().fg(Color::Gray),
-                ));
-                let server_count = servers.len();
-                for (i, server) in servers.iter().enumerate() {
-                    let sub_branch = if i == server_count - 1 {
-                        "└─"
-                    } else {
-                        "├─"
-                    };
-                    let (marker, color) = if server.enabled {
-                        ("✓", Color::Green)
-                    } else {
-                        ("✗", Color::Red)
-                    };
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("  {} {} ", cont, sub_branch),
-                            Style::default().fg(Color::Gray),
-                        ),
-                        Span::styled(
-                            format!("{} {}", marker, server.name),
-                            Style::default().fg(color),
-                        ),
-                    ]));
-                }
-            }
-            Section::Resources(label, summary) => {
-                lines.push(Line::styled(
-                    format!("  {} {} ({})", branch, label, summary.items.len()),
-                    Style::default().fg(Color::Gray),
-                ));
-                if summary.items.is_empty() {
-                    if !summary.directory_exists {
-                        lines.push(Line::styled(
-                            format!("  {} └─ (directory not found)", cont),
-                            Style::default().fg(Color::Yellow),
-                        ));
-                    }
-                } else {
-                    let item_count = summary.items.len();
-                    for (i, item) in summary.items.iter().enumerate() {
-                        let sub_branch = if i == item_count - 1 {
-                            "└─"
-                        } else {
-                            "├─"
-                        };
-                        lines.push(Line::styled(
-                            format!("  {} {} {}", cont, sub_branch, item),
-                            Style::default().fg(Color::Gray),
-                        ));
-                    }
-                }
-            }
-            Section::Rules(path) => {
-                if let Some(filename) = path.file_name() {
-                    lines.push(Line::styled(
-                        format!("  {} Rules: {}", branch, filename.to_string_lossy()),
-                        Style::default().fg(Color::Gray),
-                    ));
-                }
-            }
-            Section::Error(error) => {
-                lines.push(Line::styled(
-                    format!("  {} ⚠ {}", branch, error),
-                    Style::default().fg(Color::Yellow),
-                ));
-            }
-        }
-    }
-
-    lines
+    let nodes = crate::display::profile_to_nodes(profile);
+    crate::display::nodes_to_lines(&nodes)
 }
 
 fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -1020,9 +1053,9 @@ fn render_help_modal(frame: &mut Frame, area: Rect, view_mode: views::ViewMode) 
     {
         let _ = view_mode;
         help_text.extend([
-            Line::from("  j / ↓     Move down"),
-            Line::from("  k / ↑     Move up"),
-            Line::from("  Tab       Switch pane"),
+            Line::from("  j / ↓     Move down / scroll"),
+            Line::from("  k / ↑     Move up / scroll"),
+            Line::from("  Tab       Cycle panes"),
         ]);
     }
 
@@ -1036,6 +1069,7 @@ fn render_help_modal(frame: &mut Frame, area: Rect, view_mode: views::ViewMode) 
         Line::from("  n         New profile"),
         Line::from("  d         Delete profile"),
         Line::from("  e         Edit profile"),
+        Line::from("  f         Set default harness"),
         Line::from("  r         Refresh"),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -1075,7 +1109,17 @@ fn render_help_modal(frame: &mut Frame, area: Rect, view_mode: views::ViewMode) 
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let status_bar = StatusBar::new(app.view_mode).message(app.status_message.as_deref());
+    let harness_status = app.selected_harness().map(|kind| {
+        let harness = Harness::new(kind);
+        match harness.installation_status() {
+            Ok(status) => StatusBar::installation_status_text(&status),
+            Err(_) => "Unknown",
+        }
+    });
+
+    let status_bar = StatusBar::new(app.view_mode)
+        .message(app.status_message.as_deref())
+        .harness_status(harness_status);
     frame.render_widget(status_bar, area);
 }
 
@@ -1085,7 +1129,7 @@ pub fn run() -> Result<(), Error> {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         hook(info);
     }));
 
@@ -1100,11 +1144,16 @@ pub fn run() -> Result<(), Error> {
             .draw(|frame| ui(frame, &mut app))
             .map_err(Error::Io)?;
 
-        if event::poll(std::time::Duration::from_millis(100)).map_err(Error::Io)?
-            && let Event::Key(key) = event::read().map_err(Error::Io)?
-            && key.kind == KeyEventKind::Press
-        {
-            app.handle_key(key.code);
+        if event::poll(std::time::Duration::from_millis(100)).map_err(Error::Io)? {
+            match event::read().map_err(Error::Io)? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    app.handle_key(key.code);
+                }
+                Event::Mouse(mouse) => {
+                    app.handle_mouse(mouse);
+                }
+                _ => {}
+            }
         }
     }
 

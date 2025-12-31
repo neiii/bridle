@@ -1,363 +1,212 @@
-//! Profile management commands.
-
 use harness_locate::{Harness, HarnessKind};
+use serde::Serialize;
 
+use crate::cli::output::{ResolvedFormat, output, output_list};
 use crate::config::{BridleConfig, ProfileManager, ProfileName};
+use crate::display::{ProfileNode, SectionKind, nodes_to_text, profile_to_nodes};
+use crate::error::{Error, Result};
 use crate::harness::HarnessConfig;
 
-fn resolve_harness(name: &str) -> Option<Harness> {
+#[derive(Serialize)]
+struct ProfileListEntry {
+    name: String,
+    harness_id: String,
+    is_active: bool,
+}
+
+fn resolve_harness(name: &str) -> Result<Harness> {
     let kind = match name {
         "claude-code" | "claude" | "cc" => HarnessKind::ClaudeCode,
         "opencode" | "oc" => HarnessKind::OpenCode,
         "goose" => HarnessKind::Goose,
         "amp-code" | "amp" | "ampcode" => HarnessKind::AmpCode,
-        _ => return None,
+        _ => return Err(Error::UnknownHarness(name.to_string())),
     };
-    Some(Harness::new(kind))
+    Ok(Harness::new(kind))
 }
 
-fn get_manager() -> Option<ProfileManager> {
-    let profiles_dir = BridleConfig::profiles_dir().ok()?;
-    Some(ProfileManager::new(profiles_dir))
+fn get_manager() -> Result<ProfileManager> {
+    let profiles_dir = BridleConfig::profiles_dir()?;
+    Ok(ProfileManager::new(profiles_dir))
 }
 
-pub fn list_profiles(harness_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        eprintln!("Valid options: claude-code, opencode, goose, amp-code");
-        return;
-    };
+pub fn list_profiles(harness_name: &str, format: ResolvedFormat) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let manager = get_manager()?;
 
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
+    let active_profile: Option<String> = BridleConfig::load()
+        .ok()
+        .and_then(|c| c.active_profile_for(harness.id()).map(|s| s.to_string()));
 
-    match manager.list_profiles(&harness) {
-        Ok(profiles) => {
-            if profiles.is_empty() {
-                println!("No profiles found for {}", harness.id());
-            } else {
-                println!("Profiles for {}:", harness.id());
-                for profile in profiles {
-                    println!("  {}", profile.as_str());
-                }
+    let profiles = manager.list_profiles(&harness)?;
+    let entries: Vec<ProfileListEntry> = profiles
+        .iter()
+        .map(|p| ProfileListEntry {
+            name: p.to_string(),
+            harness_id: harness.id().to_string(),
+            is_active: active_profile
+                .as_ref()
+                .map(|a| a == &p.to_string())
+                .unwrap_or(false),
+        })
+        .collect();
+
+    output_list(&entries, format, |entries| {
+        if entries.is_empty() {
+            println!("No profiles found for {}", harness.id());
+        } else {
+            println!("Profiles for {}:", harness.id());
+            for entry in entries {
+                let active = if entry.is_active { " (active)" } else { "" };
+                println!("  {}{}", entry.name, active);
             }
         }
-        Err(e) => eprintln!("Error listing profiles: {e}"),
-    }
+    });
+    Ok(())
 }
 
-pub fn show_profile(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
+pub fn show_profile(harness_name: &str, profile_name: &str, format: ResolvedFormat) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
+    let info = manager.show_profile(&harness, &name)?;
+    output(&info, format, |info| print_profile_text(info, &harness));
+    Ok(())
+}
 
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
+fn print_profile_text(info: &crate::config::ProfileInfo, harness: &harness_locate::Harness) {
+    let mut nodes = profile_to_nodes(info);
 
-    match manager.show_profile(&harness, &name) {
-        Ok(info) => {
-            println!("Profile: {}", info.name);
-            println!("Harness: {}", info.harness_id);
-            println!(
-                "Status: {}",
-                if info.is_active { "Active" } else { "Inactive" }
+    if info.is_active {
+        let marker_exists = harness
+            .config_dir()
+            .ok()
+            .map(|dir| dir.join(format!("BRIDLE_PROFILE_{}", info.name)).exists())
+            .unwrap_or(false);
+        if marker_exists && let Some(header) = nodes.first_mut() {
+            header.children.push(
+                ProfileNode::new(SectionKind::Field, "Marker")
+                    .with_text(format!("BRIDLE_PROFILE_{}", info.name)),
             );
-            println!("Path: {}", info.path.display());
-
-            if info.is_active {
-                let marker_exists = harness
-                    .config_dir()
-                    .ok()
-                    .map(|dir| dir.join(format!("BRIDLE_PROFILE_{}", info.name)).exists())
-                    .unwrap_or(false);
-                if marker_exists {
-                    println!("Marker: BRIDLE_PROFILE_{}", info.name);
-                }
-            }
-            println!();
-
-            // Theme (OpenCode only)
-            match &info.theme {
-                Some(theme) => println!("Theme: {theme}"),
-                None if info.harness_id == "opencode" => println!("Theme: (not set)"),
-                None => println!("Theme: (not supported)"),
-            }
-
-            // Model
-            match &info.model {
-                Some(model) => println!("Model: {model}"),
-                None => println!("Model: (not set)"),
-            }
-            println!();
-
-            // MCP Servers
-            if info.mcp_servers.is_empty() {
-                println!("MCP Servers: (none)");
-            } else {
-                println!("MCP Servers ({}):", info.mcp_servers.len());
-                for server in &info.mcp_servers {
-                    let indicator = if server.enabled {
-                        "\u{2713}"
-                    } else {
-                        "\u{2717}"
-                    };
-                    let suffix = if server.enabled {
-                        String::new()
-                    } else {
-                        " (disabled)".to_string()
-                    };
-                    println!("  {indicator} {}{suffix}", server.name);
-                }
-            }
-            println!();
-
-            // Skills
-            print_resource_summary("Skills", &info.skills);
-
-            // Commands
-            print_resource_summary("Commands", &info.commands);
-
-            // Plugins (OpenCode only)
-            match &info.plugins {
-                Some(plugins) => print_resource_summary("Plugins", plugins),
-                None => println!("Plugins: (not supported)"),
-            }
-
-            // Agents (OpenCode only)
-            match &info.agents {
-                Some(agents) => print_resource_summary("Agents", agents),
-                None => println!("Agents: (not supported)"),
-            }
-
-            // Rules file
-            match &info.rules_file {
-                Some(path) => {
-                    let filename = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("(unknown)");
-                    println!("Rules: {filename}");
-                }
-                None => println!("Rules: (none)"),
-            }
-
-            // Extraction errors
-            if !info.extraction_errors.is_empty() {
-                println!();
-                println!("Errors:");
-                for err in &info.extraction_errors {
-                    println!("  \u{26a0} {err}");
-                }
-            }
         }
-        Err(e) => eprintln!("Error showing profile: {e}"),
     }
+
+    print!("{}", nodes_to_text(&nodes));
 }
 
-fn print_resource_summary(label: &str, summary: &crate::config::ResourceSummary) {
-    if !summary.directory_exists {
-        println!("{label}: (directory not found)");
-    } else if summary.items.is_empty() {
-        println!("{label}: (none)");
-    } else {
-        println!("{label} ({}):", summary.items.len());
-        println!("  {}", summary.items.join(", "));
-    }
+pub fn create_profile(harness_name: &str, profile_name: &str) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
+
+    let path = manager.create_profile(&harness, &name)?;
+    println!("Created profile: {}", name.as_str());
+    println!("Path: {}", path.display());
+    Ok(())
 }
 
-pub fn create_profile(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
+pub fn create_profile_from_current(harness_name: &str, profile_name: &str) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
-
-    match manager.create_profile(&harness, &name) {
-        Ok(path) => {
-            println!("Created profile: {}", name.as_str());
-            println!("Path: {}", path.display());
-        }
-        Err(e) => eprintln!("Error creating profile: {e}"),
-    }
+    let path = manager.create_from_current_with_resources(&harness, Some(&harness), &name)?;
+    println!("Created profile from current config: {}", name.as_str());
+    println!("Path: {}", path.display());
+    Ok(())
 }
 
-pub fn create_profile_from_current(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
+pub fn delete_profile(harness_name: &str, profile_name: &str) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
-
-    match manager.create_from_current_with_resources(&harness, Some(&harness), &name) {
-        Ok(path) => {
-            println!("Created profile from current config: {}", name.as_str());
-            println!("Path: {}", path.display());
-        }
-        Err(e) => eprintln!("Error creating profile: {e}"),
-    }
+    manager.delete_profile(&harness, &name)?;
+    println!("Deleted profile: {}", name.as_str());
+    Ok(())
 }
 
-pub fn delete_profile(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
-
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
-
-    match manager.delete_profile(&harness, &name) {
-        Ok(()) => println!("Deleted profile: {}", name.as_str()),
-        Err(e) => eprintln!("Error deleting profile: {e}"),
-    }
-}
-
-pub fn edit_profile(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
-
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
+pub fn edit_profile(harness_name: &str, profile_name: &str) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
     let profile_path = manager.profile_path(&harness, &name);
     if !profile_path.exists() {
-        eprintln!("Profile not found: {profile_name}");
-        return;
+        return Err(Error::ProfileNotFound(profile_name.to_string()));
     }
 
     let config = crate::config::BridleConfig::load().unwrap_or_default();
     let editor = config.editor();
     let status = std::process::Command::new(&editor)
         .arg(&profile_path)
-        .status();
+        .status()?;
 
-    match status {
-        Ok(s) if s.success() => println!("Edited profile: {profile_name}"),
-        Ok(s) => eprintln!("Editor exited with status: {s}"),
-        Err(e) => eprintln!("Failed to launch editor '{editor}': {e}"),
+    if status.success() {
+        println!("Edited profile: {profile_name}");
+        Ok(())
+    } else {
+        Err(Error::Command(format!(
+            "Editor exited with status: {status}"
+        )))
     }
 }
 
-pub fn diff_profiles(harness_name: &str, profile_name: &str, other_name: Option<&str>) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
-
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
+pub fn diff_profiles(
+    harness_name: &str,
+    profile_name: &str,
+    other_name: Option<&str>,
+) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
     let profile_path = manager.profile_path(&harness, &name);
     if !profile_path.exists() {
-        eprintln!("Profile not found: {profile_name}");
-        return;
+        return Err(Error::ProfileNotFound(profile_name.to_string()));
     }
 
     let other_path = if let Some(other) = other_name {
-        let Ok(other_name) = ProfileName::new(other) else {
-            eprintln!("Invalid profile name: {other}");
-            return;
-        };
+        let other_name =
+            ProfileName::new(other).map_err(|_| Error::InvalidProfileName(other.to_string()))?;
         let path = manager.profile_path(&harness, &other_name);
         if !path.exists() {
-            eprintln!("Profile not found: {other}");
-            return;
+            return Err(Error::ProfileNotFound(other.to_string()));
         }
         path
     } else {
-        match harness.config(&harness_locate::Scope::Global) {
-            Ok(path) => path,
-            Err(_) => {
-                eprintln!("Could not find current config for harness");
-                return;
-            }
-        }
+        harness.config(&harness_locate::Scope::Global)?
     };
 
     let status = std::process::Command::new("diff")
         .arg("-u")
         .arg(&profile_path)
         .arg(&other_path)
-        .status();
+        .status()?;
 
-    match status {
-        Ok(s) if s.code() == Some(0) => println!("No differences"),
-        Ok(s) if s.code() == Some(1) => {}
-        Ok(s) => eprintln!("diff exited with status: {s}"),
-        Err(e) => eprintln!("Failed to run diff: {e}"),
+    match status.code() {
+        Some(0) => println!("No differences"),
+        Some(1) => {}
+        _ => return Err(Error::Command(format!("diff exited with status: {status}"))),
     }
+    Ok(())
 }
 
-pub fn switch_profile(harness_name: &str, profile_name: &str) {
-    let Some(harness) = resolve_harness(harness_name) else {
-        eprintln!("Unknown harness: {harness_name}");
-        return;
-    };
-
-    let Ok(name) = ProfileName::new(profile_name) else {
-        eprintln!("Invalid profile name: {profile_name}");
-        return;
-    };
-
-    let Some(manager) = get_manager() else {
-        eprintln!("Could not find config directory");
-        return;
-    };
+pub fn switch_profile(harness_name: &str, profile_name: &str) -> Result<()> {
+    let harness = resolve_harness(harness_name)?;
+    let name = ProfileName::new(profile_name)
+        .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
+    let manager = get_manager()?;
 
     if !manager.profile_exists(&harness, &name) {
-        eprintln!("Profile not found: {profile_name}");
-        return;
+        return Err(Error::ProfileNotFound(profile_name.to_string()));
     }
 
     let harness_id = harness.id();
@@ -367,15 +216,12 @@ pub fn switch_profile(harness_name: &str, profile_name: &str) {
             println!("Backed up current config to: {}", backup_path.display());
         }
         Err(e) => {
-            eprintln!("Warning: Could not backup current config: {e}");
+            println!("Warning: Could not backup current config: {e}");
         }
     }
 
-    match manager.switch_profile_with_resources(&harness, Some(&harness), &name) {
-        Ok(_) => {
-            println!("Switched to profile: {}", name.as_str());
-            println!("Harness: {harness_id}");
-        }
-        Err(e) => eprintln!("Error switching profile: {e}"),
-    }
+    manager.switch_profile_with_resources(&harness, Some(&harness), &name)?;
+    println!("Switched to profile: {}", name.as_str());
+    println!("Harness: {harness_id}");
+    Ok(())
 }

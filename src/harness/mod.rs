@@ -1,9 +1,10 @@
 //! Harness integration for bridle.
+//!
+//! Provides the [`HarnessConfig`] trait that abstracts over different AI coding assistants.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-mod adapter;
 mod display;
 
 use std::path::PathBuf;
@@ -12,15 +13,31 @@ use harness_locate::{InstallationStatus, McpServer, Scope};
 
 use crate::error::Result;
 
-pub use adapter::HarnessAdapter;
 pub use display::DisplayInfo;
 
+/// Configuration interface for AI coding assistant harnesses.
+///
+/// Implemented by harness types to provide uniform access to their configuration
+/// directories, installation status, and MCP server settings.
 pub trait HarnessConfig {
+    /// Returns the harness identifier (e.g., "opencode", "claude-code", "goose").
     fn id(&self) -> &str;
+
+    /// Returns the path to the harness's configuration directory.
     fn config_dir(&self) -> Result<PathBuf>;
+
+    /// Checks whether the harness binary and config are installed.
     fn installation_status(&self) -> Result<InstallationStatus>;
+
+    /// Returns the MCP config filename if the harness supports MCP.
     fn mcp_filename(&self) -> Option<String>;
+
+    /// Returns the full path to the MCP configuration file.
     fn mcp_config_path(&self) -> Option<PathBuf>;
+
+    /// Parses MCP server definitions from config content.
+    ///
+    /// Returns a list of (server_name, enabled) pairs.
     fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>>;
 }
 

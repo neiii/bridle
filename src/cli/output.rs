@@ -1,0 +1,72 @@
+use clap::ValueEnum;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+    #[default]
+    Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedFormat {
+    Text,
+    Json,
+}
+
+impl OutputFormat {
+    pub fn resolve(self) -> ResolvedFormat {
+        match self {
+            Self::Text => ResolvedFormat::Text,
+            Self::Json => ResolvedFormat::Json,
+            Self::Auto => {
+                if is_nushell() {
+                    ResolvedFormat::Json
+                } else {
+                    ResolvedFormat::Text
+                }
+            }
+        }
+    }
+}
+
+fn is_nushell() -> bool {
+    std::env::var("NU_VERSION").is_ok()
+}
+
+pub fn output<T, F>(data: &T, format: ResolvedFormat, text_fn: F)
+where
+    T: Serialize,
+    F: FnOnce(&T),
+{
+    match format {
+        ResolvedFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string(data).expect("serialization should not fail")
+            );
+        }
+        ResolvedFormat::Text => {
+            text_fn(data);
+        }
+    }
+}
+
+pub fn output_list<T, F>(items: &[T], format: ResolvedFormat, text_fn: F)
+where
+    T: Serialize,
+    F: FnOnce(&[T]),
+{
+    match format {
+        ResolvedFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string(items).expect("serialization should not fail")
+            );
+        }
+        ResolvedFormat::Text => {
+            text_fn(items);
+        }
+    }
+}

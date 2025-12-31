@@ -38,6 +38,22 @@ pub enum Error {
     #[error("invalid profile name: {0}")]
     InvalidProfileName(String),
 
+    /// Unknown harness name.
+    #[error("unknown harness: {0}\nValid options: claude-code, opencode, goose, amp-code")]
+    UnknownHarness(String),
+
+    /// Command failed.
+    #[error("{0}")]
+    Command(String),
+
+    /// Unknown configuration setting.
+    #[error("unknown setting: {0}\nValid options: editor, marker_files, default_harness")]
+    UnknownSetting(String),
+
+    /// Invalid configuration value.
+    #[error("invalid value: {0}")]
+    InvalidValue(String),
+
     /// IO error.
     #[error(transparent)]
     Io(#[from] std::io::Error),

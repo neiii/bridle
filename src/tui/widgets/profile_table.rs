@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Cell, Row, StatefulWidget, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, TableState},
 };
 
 use crate::config::ProfileInfo;
@@ -10,6 +10,7 @@ use crate::config::ProfileInfo;
 pub struct ProfileTable<'a> {
     profiles: &'a [ProfileInfo],
     block: Option<Block<'a>>,
+    focused: bool,
 }
 
 impl<'a> ProfileTable<'a> {
@@ -17,12 +18,18 @@ impl<'a> ProfileTable<'a> {
         Self {
             profiles,
             block: None,
+            focused: false,
         }
     }
 
     #[allow(dead_code)]
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);
+        self
+    }
+
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
         self
     }
 
@@ -105,12 +112,26 @@ impl StatefulWidget for ProfileTable<'_> {
             Constraint::Length(4),
         ];
 
-        let table = Table::new(rows, widths).header(header).row_highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        );
+        let border_style = if self.focused {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let table = Table::new(rows, widths)
+            .header(header)
+            .row_highlight_style(
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .title(" Profiles "),
+            );
 
         let table = if let Some(block) = self.block {
             table.block(block)

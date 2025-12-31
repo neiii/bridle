@@ -33,7 +33,7 @@ pub struct BridleConfig {
     #[serde(default)]
     pub active: HashMap<String, String>,
 
-    /// Whether to create BRIDLE_PROFILE_<name> marker files in harness config directories.
+    /// Whether to create `BRIDLE_PROFILE_<name>` marker files in harness config directories.
     /// Disabled by default (opt-in).
     #[serde(default)]
     pub profile_marker: bool,
@@ -50,6 +50,10 @@ pub struct BridleConfig {
     /// TUI-specific settings.
     #[serde(default)]
     pub tui: TuiConfig,
+
+    /// Default harness to show when TUI opens.
+    #[serde(default)]
+    pub default_harness: Option<String>,
 }
 
 impl BridleConfig {
@@ -82,7 +86,12 @@ impl BridleConfig {
     }
 
     /// Get the configuration directory path.
+    ///
+    /// Respects the `BRIDLE_CONFIG_DIR` environment variable for testing.
     pub fn config_dir() -> crate::error::Result<PathBuf> {
+        if let Ok(dir) = std::env::var("BRIDLE_CONFIG_DIR") {
+            return Ok(PathBuf::from(dir));
+        }
         harness_locate::platform::config_dir()
             .map(|d| d.join("bridle"))
             .map_err(|e| crate::error::Error::NoConfigFound(e.to_string()))
@@ -124,5 +133,13 @@ impl BridleConfig {
 
     pub fn set_profile_marker(&mut self, enabled: bool) {
         self.profile_marker = enabled;
+    }
+
+    pub fn default_harness(&self) -> Option<&str> {
+        self.default_harness.as_deref()
+    }
+
+    pub fn set_default_harness(&mut self, harness_id: Option<&str>) {
+        self.default_harness = harness_id.map(String::from);
     }
 }

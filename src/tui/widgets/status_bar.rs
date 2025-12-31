@@ -1,5 +1,6 @@
 use crate::tui::theme::Theme;
 use crate::tui::views::ViewMode;
+use harness_locate::InstallationStatus;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -10,6 +11,7 @@ use ratatui::{
 pub struct StatusBar<'a> {
     view_mode: ViewMode,
     message: Option<&'a str>,
+    harness_status: Option<&'a str>,
 }
 
 impl<'a> StatusBar<'a> {
@@ -17,6 +19,7 @@ impl<'a> StatusBar<'a> {
         Self {
             view_mode,
             message: None,
+            harness_status: None,
         }
     }
 
@@ -25,10 +28,25 @@ impl<'a> StatusBar<'a> {
         self
     }
 
+    pub fn harness_status(mut self, status: Option<&'a str>) -> Self {
+        self.harness_status = status;
+        self
+    }
+
+    pub fn installation_status_text(status: &InstallationStatus) -> &'static str {
+        match status {
+            InstallationStatus::FullyInstalled { .. } => "Installed",
+            InstallationStatus::ConfigOnly { .. } => "Config only",
+            InstallationStatus::BinaryOnly { .. } => "Binary only",
+            InstallationStatus::NotInstalled => "Not installed",
+            _ => "Unknown",
+        }
+    }
+
     fn keybindings(&self) -> &'static str {
         match self.view_mode {
             ViewMode::Dashboard => {
-                "q:quit  ←/→:harness  ↑/↓:profile  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
+                "q:quit  ←/→:harness  ↑/↓:profile  Tab:focus  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
             }
             ViewMode::Legacy => {
                 "q:quit  Tab:pane  ↑/↓:nav  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
@@ -54,13 +72,19 @@ impl Widget for StatusBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let msg = self.message.unwrap_or("");
 
-        let spans = vec![
+        let mut spans = vec![
             Span::styled(self.mode_indicator(), Theme::tab_selected()),
             Span::raw(" "),
-            Span::styled(self.keybindings(), Theme::text_muted()),
-            Span::raw("  "),
-            Span::styled(msg, Theme::text_warning()),
         ];
+
+        if let Some(status) = self.harness_status {
+            spans.push(Span::styled(format!("[{}]", status), Theme::text_muted()));
+            spans.push(Span::raw(" "));
+        }
+
+        spans.push(Span::styled(self.keybindings(), Theme::text_muted()));
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(msg, Theme::text_warning()));
 
         let paragraph = Paragraph::new(Line::from(spans));
         paragraph.render(area, buf);

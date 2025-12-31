@@ -3,45 +3,24 @@
 use harness_locate::{Harness, HarnessKind};
 
 use crate::config::{BridleConfig, ProfileManager};
+use crate::error::Result;
 
-pub fn run_init() {
-    let config_dir = match BridleConfig::config_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return;
-        }
-    };
-
-    let config_path = match BridleConfig::config_path() {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return;
-        }
-    };
+pub fn run_init() -> Result<()> {
+    let config_dir = BridleConfig::config_dir()?;
+    let config_path = BridleConfig::config_path()?;
 
     if config_path.exists() {
         println!("Already initialized at {}", config_dir.display());
-        return;
+        return Ok(());
     }
 
-    if let Err(e) = std::fs::create_dir_all(&config_dir) {
-        eprintln!("Failed to create config directory: {e}");
-        return;
-    }
+    std::fs::create_dir_all(&config_dir)?;
 
     let profiles_dir = config_dir.join("profiles");
-    if let Err(e) = std::fs::create_dir_all(&profiles_dir) {
-        eprintln!("Failed to create profiles directory: {e}");
-        return;
-    }
+    std::fs::create_dir_all(&profiles_dir)?;
 
     let config = BridleConfig::default();
-    if let Err(e) = config.save() {
-        eprintln!("Failed to write config: {e}");
-        return;
-    }
+    config.save()?;
 
     let manager = ProfileManager::new(profiles_dir);
     for kind in HarnessKind::ALL {
@@ -50,4 +29,5 @@ pub fn run_init() {
     }
 
     println!("Initialized bridle at {}", config_dir.display());
+    Ok(())
 }
