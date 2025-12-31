@@ -1,8 +1,10 @@
-![Bridle](bridle_header.png)
+![Bridle](assets/bridle_header.png)
 
 # Bridle
 
 Unified configuration manager for AI coding assistants. Manage profiles, switch configurations, and view status across multiple harnesses from a single tool.
+
+![Screenshot](assets/screenshot.png)
 
 ## Supported Harnesses
 
