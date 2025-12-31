@@ -597,6 +597,10 @@ pub fn extract_plugins(
         return extract_plugins_from_opencode_config(profile_path);
     }
 
+    if harness.id() == "claude-code" {
+        return extract_claude_code_plugins(profile_path);
+    }
+
     match harness.plugins(&Scope::Global) {
         Ok(Some(dir)) => {
             let subdir = dir
@@ -657,6 +661,85 @@ fn extract_plugins_from_opencode_config(
             }),
             None,
         )
+    }
+}
+
+fn extract_claude_code_plugins(profile_path: &Path) -> (Option<ResourceSummary>, Option<String>) {
+    let marketplace_path = profile_path.join(".claude-plugin").join("marketplace.json");
+    if marketplace_path.exists()
+        && let Some(result) = parse_marketplace_json(&marketplace_path)
+    {
+        return result;
+    }
+
+    let plugins_dir = profile_path.join("plugins");
+    if !plugins_dir.exists() {
+        return (None, None);
+    }
+
+    let entries = match std::fs::read_dir(&plugins_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            return (
+                Some(ResourceSummary {
+                    items: Vec::new(),
+                    directory_exists: true,
+                }),
+                Some(format!("plugins: {}", e)),
+            );
+        }
+    };
+
+    let items: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter(|e| e.path().join(".claude-plugin").join("plugin.json").exists())
+        .filter_map(|e| e.file_name().to_str().map(String::from))
+        .collect();
+
+    if items.is_empty() {
+        (None, None)
+    } else {
+        (
+            Some(ResourceSummary {
+                items,
+                directory_exists: true,
+            }),
+            None,
+        )
+    }
+}
+
+fn parse_marketplace_json(path: &Path) -> Option<(Option<ResourceSummary>, Option<String>)> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => return Some((None, Some(format!("plugins: {}", e)))),
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => return Some((None, Some(format!("plugins: {}", e)))),
+    };
+
+    let plugins = parsed
+        .get("plugins")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                .collect::<Vec<_>>()
+        })?;
+
+    if plugins.is_empty() {
+        None
+    } else {
+        Some((
+            Some(ResourceSummary {
+                items: plugins,
+                directory_exists: true,
+            }),
+            None,
+        ))
     }
 }
 
