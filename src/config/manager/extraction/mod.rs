@@ -58,21 +58,25 @@ pub fn extract_mcp_servers(
     harness: &dyn HarnessConfig,
     profile_path: &Path,
 ) -> Result<Vec<McpServerInfo>> {
-    if harness.id() == "opencode" {
-        return extract_mcp_from_opencode_config(profile_path);
+    match harness.id() {
+        "opencode" => extract_mcp_from_opencode_config(profile_path),
+        "amp-code" => extract_mcp_from_ampcode_config(profile_path),
+        "claude-code" => extract_mcp_from_claudecode_config(profile_path),
+        "goose" => extract_mcp_from_goose_config(profile_path),
+        _ => extract_mcp_generic(harness, profile_path),
     }
+}
 
-    if harness.id() == "amp-code" {
-        return extract_mcp_from_ampcode_config(profile_path);
-    }
-
+fn extract_mcp_generic(
+    harness: &dyn HarnessConfig,
+    profile_path: &Path,
+) -> Result<Vec<McpServerInfo>> {
     let mcp_filename = match harness.mcp_filename() {
         Some(f) => f,
         None => return Ok(Vec::new()),
     };
 
     let profile_mcp_path = profile_path.join(&mcp_filename);
-
     if !profile_mcp_path.exists() {
         return Ok(Vec::new());
     }
@@ -90,6 +94,105 @@ pub fn extract_mcp_servers(
             url: None,
         })
         .collect())
+}
+
+fn extract_mcp_from_claudecode_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
+    let config_path = profile_path.join(".mcp.json");
+    if !config_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| Error::Config(format!("Failed to read .mcp.json: {}", e)))?;
+
+    let config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| Error::Config(format!("Failed to parse .mcp.json: {}", e)))?;
+
+    let mcp_obj = match config.get("mcpServers").and_then(|v| v.as_object()) {
+        Some(obj) => obj,
+        None => return Ok(Vec::new()),
+    };
+
+    let servers = mcp_obj
+        .iter()
+        .map(|(name, value)| {
+            let disabled = value
+                .get("disabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let command = value
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let args = value.get("args").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.as_str().map(String::from))
+                    .collect()
+            });
+            let url = value.get("url").and_then(|v| v.as_str()).map(String::from);
+            McpServerInfo {
+                name: name.clone(),
+                enabled: !disabled,
+                server_type: Some("stdio".to_string()),
+                command,
+                args,
+                url,
+            }
+        })
+        .collect();
+
+    Ok(servers)
+}
+
+fn extract_mcp_from_goose_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
+    let config_path = profile_path.join("config.yaml");
+    if !config_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| Error::Config(format!("Failed to read config.yaml: {}", e)))?;
+
+    let config: serde_yaml::Value = serde_yaml::from_str(&content)
+        .map_err(|e| Error::Config(format!("Failed to parse config.yaml: {}", e)))?;
+
+    let extensions = match config.get("extensions").and_then(|v| v.as_mapping()) {
+        Some(obj) => obj,
+        None => return Ok(Vec::new()),
+    };
+
+    let mcp_types = ["stdio", "sse", "http", "streamable_http"];
+    let servers = extensions
+        .iter()
+        .filter_map(|(name, value)| {
+            let name_str = name.as_str()?;
+            let ext_type = value.get("type").and_then(|v| v.as_str())?;
+            if !mcp_types.contains(&ext_type) {
+                return None;
+            }
+            let enabled = value
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let command = value.get("cmd").and_then(|v| v.as_str()).map(String::from);
+            let args = value.get("args").and_then(|v| v.as_sequence()).map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.as_str().map(String::from))
+                    .collect()
+            });
+            let url = value.get("url").and_then(|v| v.as_str()).map(String::from);
+            Some(McpServerInfo {
+                name: name_str.to_string(),
+                enabled,
+                server_type: Some(ext_type.to_string()),
+                command,
+                args,
+                url,
+            })
+        })
+        .collect();
+
+    Ok(servers)
 }
 
 fn extract_mcp_from_ampcode_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
@@ -236,14 +339,12 @@ fn extract_model_ampcode(profile_path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(&config_path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    if let Some(default_tier) = parsed.get("amp.model.default").and_then(|v| v.as_str()) {
-        let tier = default_tier.trim();
-        let model_key = format!("amp.model.{}", tier);
-        if let Some(model) = parsed.get(model_key.as_str()).and_then(|v| v.as_str()) {
-            return Some(model.to_string());
-        }
+    // AMP Code uses dotted keys like "amp.model.default" directly containing the model name
+    if let Some(model) = parsed.get("amp.model.default").and_then(|v| v.as_str()) {
+        return Some(model.to_string());
     }
 
+    // Fallback: nested amp.model object
     parsed
         .get("amp")
         .and_then(|amp| amp.get("model"))
