@@ -312,7 +312,7 @@ impl App {
                 } else if self.profile_area.is_some_and(|a| a.contains(pos)) {
                     self.active_pane = Pane::Profiles;
                     let area = self.profile_area.unwrap();
-                    let inner_y = event.row.saturating_sub(area.y).saturating_sub(1);
+                    let inner_y = event.row.saturating_sub(area.y).saturating_sub(2);
                     let idx = inner_y as usize;
                     if idx < self.profiles.len() {
                         self.profile_state.select(Some(idx));
