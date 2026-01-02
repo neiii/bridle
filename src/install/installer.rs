@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use harness_locate::{Harness, HarnessKind, Scope};
 
-use super::manifest::{InstallManifest, ManifestEntry, manifest_path};
+use super::manifest::{manifest_path, InstallManifest, ManifestEntry};
 use super::types::{
     AgentInfo, CommandInfo, ComponentType, InstallFailure, InstallOptions, InstallReport,
     InstallSkip, InstallSuccess, InstallTarget, SkillInfo, SkipReason, SourceInfo,
@@ -54,6 +54,140 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
         _ => None,
     }
+}
+
+pub fn sanitize_name_for_opencode(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+pub fn transform_skill_for_opencode(content: &str, sanitized_dir_name: &str) -> String {
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return format!(
+            "---\nname: {}\ndescription: Skill installed by Bridle\n---\n{}",
+            sanitized_dir_name, content
+        );
+    }
+
+    let frontmatter = parts[1];
+    let body = parts[2];
+
+    let mut new_lines: Vec<String> = Vec::new();
+    let mut found_name = false;
+    let mut found_description = false;
+
+    for line in frontmatter.lines() {
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with("name:") {
+            new_lines.push(format!("name: {}", sanitized_dir_name));
+            found_name = true;
+            continue;
+        }
+
+        if trimmed.starts_with("description:") {
+            found_description = true;
+        }
+
+        new_lines.push(line.to_string());
+    }
+
+    if !found_name {
+        new_lines.insert(0, format!("name: {}", sanitized_dir_name));
+    }
+
+    if !found_description {
+        let insert_pos = new_lines
+            .iter()
+            .position(|l| l.trim_start().starts_with("name:"))
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        new_lines.insert(
+            insert_pos,
+            "description: Skill installed by Bridle".to_string(),
+        );
+    }
+
+    let new_frontmatter = new_lines.join("\n");
+    format!("---\n{}\n---{}", new_frontmatter.trim(), body)
+}
+
+fn color_name_to_hex(name: &str) -> Option<&'static str> {
+    match name.to_lowercase().trim() {
+        "red" => Some("#FF0000"),
+        "green" => Some("#00FF00"),
+        "blue" => Some("#0000FF"),
+        "yellow" => Some("#FFFF00"),
+        "orange" => Some("#FFA500"),
+        "purple" => Some("#800080"),
+        "cyan" => Some("#00FFFF"),
+        "magenta" => Some("#FF00FF"),
+        "white" => Some("#FFFFFF"),
+        "black" => Some("#000000"),
+        "gray" | "grey" => Some("#808080"),
+        "pink" => Some("#FFC0CB"),
+        "brown" => Some("#A52A2A"),
+        "lime" => Some("#00FF00"),
+        "navy" => Some("#000080"),
+        "teal" => Some("#008080"),
+        "olive" => Some("#808000"),
+        "maroon" => Some("#800000"),
+        "aqua" => Some("#00FFFF"),
+        "silver" => Some("#C0C0C0"),
+        "gold" => Some("#FFD700"),
+        _ => None,
+    }
+}
+
+fn transform_agent_for_opencode(content: &str) -> String {
+    use std::borrow::Cow;
+
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return content.to_string();
+    }
+
+    let frontmatter = parts[1];
+    let body = parts[2];
+
+    let mut new_frontmatter = String::new();
+    for line in frontmatter.lines() {
+        if line.trim_start().starts_with("tools:") {
+            let value = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+            if !value.is_empty()
+                && !value.starts_with('{')
+                && !value.starts_with('\n')
+                && value != "|"
+            {
+                new_frontmatter.push_str("tools:\n  \"*\": true\n");
+                continue;
+            }
+        }
+
+        if line.trim_start().starts_with("color:") {
+            let value = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+            let clean_value = value.trim_matches('"').trim_matches('\'');
+            if !clean_value.is_empty()
+                && !clean_value.starts_with('#')
+                && let Some(hex) = color_name_to_hex(clean_value)
+            {
+                new_frontmatter.push_str(&format!("color: \"{}\"\n", hex));
+                continue;
+            }
+        }
+
+        new_frontmatter.push_str(line);
+        new_frontmatter.push('\n');
+    }
+
+    format!("---\n{}\n---{}", new_frontmatter.trim_end(), body)
 }
 
 /// Canonical directory name for agents in profile storage.
@@ -163,11 +297,18 @@ fn write_to_harness_if_active(
                 .map(|d| d.join("skills"))
                 .unwrap_or_default()
         });
-    let harness_skill_dir = skills_dir.join(&skill.name);
+    let (skill_dir_name, content) = if matches!(kind, HarnessKind::OpenCode) {
+        let sanitized = sanitize_name_for_opencode(&skill.name);
+        let transformed = transform_skill_for_opencode(&skill.content, &sanitized);
+        (sanitized, transformed)
+    } else {
+        (skill.name.clone(), skill.content.clone())
+    };
+    let harness_skill_dir = skills_dir.join(&skill_dir_name);
     let harness_skill_path = harness_skill_dir.join("SKILL.md");
 
     fs::create_dir_all(&harness_skill_dir).map_err(InstallError::CreateDir)?;
-    fs::write(&harness_skill_path, &skill.content).map_err(InstallError::WriteFile)?;
+    fs::write(&harness_skill_path, &content).map_err(InstallError::WriteFile)?;
 
     Ok(Some(harness_skill_path))
 }
@@ -201,7 +342,13 @@ fn write_agent_to_harness_if_active(
     if let Some(parent) = harness_agent_path.parent() {
         fs::create_dir_all(parent).map_err(InstallError::CreateDir)?;
     }
-    fs::write(&harness_agent_path, &agent.content).map_err(InstallError::WriteFile)?;
+
+    let content = if matches!(kind, HarnessKind::OpenCode) {
+        transform_agent_for_opencode(&agent.content)
+    } else {
+        agent.content.clone()
+    };
+    fs::write(&harness_agent_path, &content).map_err(InstallError::WriteFile)?;
 
     Ok(Some(harness_agent_path))
 }

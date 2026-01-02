@@ -544,7 +544,9 @@ dependencies = [
 
 [[package]]
 name = "dialoguer-multiselect"
-version = "0.12.0"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5773fe61ad0628afe23eadf1e8221ba9bb676401c0f6a2b9e3279d3a12368acf"
 dependencies = [
  "console",
  "shell-words",
@@ -719,7 +721,9 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "harness-locate"
-version = "0.2.5"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b18b83b73c20eabba144d099aff982b5cdacc93097f132382feafe9c677be704"
 dependencies = [
  "home",
  "serde",
@@ -1578,7 +1582,9 @@ checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "skills-locate"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d2e3ac19e9fefd0e5dec5ac561536213336ce3651da85d9d058649da1d520da"
 dependencies = [
  "serde",
  "serde_json",

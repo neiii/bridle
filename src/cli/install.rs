@@ -23,6 +23,13 @@ type TargetGroup = (
     Vec<bool>,
 );
 
+fn harness_supports_skills(harness_id: &str) -> bool {
+    parse_harness_kind(harness_id)
+        .and_then(|kind| Harness::locate(kind).ok())
+        .and_then(|h| h.skills(&Scope::Global).ok().flatten())
+        .is_some()
+}
+
 fn harness_supports_agents(harness_id: &str) -> bool {
     parse_harness_kind(harness_id)
         .and_then(|kind| Harness::locate(kind).ok())
@@ -266,6 +273,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     let mut group_select = GroupMultiSelect::new()
         .with_theme(&theme)
         .with_prompt("Select components to install (Esc to cancel)")
+        .max_length(20)
         .defaults(defaults);
 
     for (category, names, _) in &groups {
@@ -360,7 +368,26 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         }
 
         let active_profile = config.active_profile_for(harness_id);
+        let supports_skills = harness_supports_skills(harness_id);
         let supports_agents = harness_supports_agents(harness_id);
+        let supports_commands = harness_supports_commands(harness_id);
+
+        let can_install_skills = supports_skills && !selected.skills.is_empty();
+        let can_install_agents = supports_agents && !selected.agents.is_empty();
+        let can_install_commands = supports_commands && !selected.commands.is_empty();
+        let can_install_mcp = !selected.mcp_servers.is_empty(); // TODO: add harness MCP support check
+
+        let can_install_anything =
+            can_install_skills || can_install_agents || can_install_commands || can_install_mcp;
+
+        let mut skipped: Vec<&str> = Vec::new();
+        if !selected.agents.is_empty() && !supports_agents {
+            skipped.push("agents");
+        }
+        if !selected.commands.is_empty() && !supports_commands {
+            skipped.push("commands");
+        }
+
         let incompatible_agent_count = if supports_agents && !selected.agents.is_empty() {
             count_incompatible_agents(&selected.agents, *kind)
         } else {
@@ -379,13 +406,23 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
                 profile.to_string()
             };
 
-            let state = if !selected.agents.is_empty() && !supports_agents {
+            let state = if !can_install_anything {
                 ItemState::Disabled {
-                    reason: "agents not supported".into(),
+                    reason: "no selected components supported".into(),
                 }
-            } else if incompatible_agent_count > 0 {
+            } else if !skipped.is_empty() || incompatible_agent_count > 0 {
+                let mut warnings: Vec<String> = Vec::new();
+                if !skipped.is_empty() {
+                    warnings.push(format!("{} not supported", skipped.join(", ")));
+                }
+                if incompatible_agent_count > 0 {
+                    warnings.push(format!(
+                        "{} agent(s) incompatible",
+                        incompatible_agent_count
+                    ));
+                }
                 ItemState::Warning {
-                    message: format!("{} agent(s) incompatible", incompatible_agent_count),
+                    message: warnings.join("; "),
                 }
             } else {
                 ItemState::Normal
@@ -416,6 +453,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
     let mut group_select = GroupMultiSelect::new()
         .with_theme(&theme)
         .with_prompt("Select target profiles (Esc to cancel)")
+        .max_length(20)
         .defaults(all_defaults);
 
     for (harness_id, items_with_states, _, _) in &groups {

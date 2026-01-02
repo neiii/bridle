@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use harness_locate::{Harness, Scope};
+use harness_locate::{Harness, HarnessKind, Scope};
 
 use crate::error::Result;
 use crate::harness::HarnessConfig;
+use crate::install::installer::{sanitize_name_for_opencode, transform_skill_for_opencode};
 
 /// Directories to skip when copying profiles
 const EXCLUDED_DIRS: &[&str] = &[
@@ -165,6 +166,54 @@ pub const CANONICAL_AGENTS_DIR: &str = "agents";
 pub const CANONICAL_SKILLS_DIR: &str = "skills";
 pub const CANONICAL_PLUGINS_DIR: &str = "plugins";
 
+fn copy_skills_for_opencode(src: &Path, dst: &Path) -> Result<()> {
+    if !src.exists() {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(dst)?;
+
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+
+        if !src_path.is_dir() {
+            continue;
+        }
+
+        let original_name = entry.file_name().to_string_lossy().to_string();
+        let sanitized_name = sanitize_name_for_opencode(&original_name);
+        let dst_skill_dir = dst.join(&sanitized_name);
+
+        std::fs::create_dir_all(&dst_skill_dir)?;
+
+        for skill_entry in std::fs::read_dir(&src_path)? {
+            let skill_entry = skill_entry?;
+            let skill_src = skill_entry.path();
+            let skill_dst = dst_skill_dir.join(skill_entry.file_name());
+
+            if skill_src.is_file() {
+                let is_skill_md = skill_entry
+                    .file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("SKILL.md");
+
+                if is_skill_md {
+                    let content = std::fs::read_to_string(&skill_src)?;
+                    let transformed = transform_skill_for_opencode(&content, &sanitized_name);
+                    std::fs::write(&skill_dst, transformed)?;
+                } else {
+                    std::fs::copy(&skill_src, &skill_dst)?;
+                }
+            } else if skill_src.is_dir() {
+                copy_dir_filtered(&skill_src, &skill_dst)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Copy resource directories between profile and harness using harness-aware paths.
 ///
 /// When `to_profile` is true: harness paths → canonical profile dirs
@@ -211,7 +260,15 @@ pub fn copy_resource_directories(
         };
 
         if src.exists() && src.is_dir() {
-            copy_dir_filtered(src, dst)?;
+            let is_skills_to_opencode = !to_profile
+                && canonical_name == CANONICAL_SKILLS_DIR
+                && matches!(harness.kind(), HarnessKind::OpenCode);
+
+            if is_skills_to_opencode {
+                copy_skills_for_opencode(src, dst)?;
+            } else {
+                copy_dir_filtered(src, dst)?;
+            }
         }
     }
 
