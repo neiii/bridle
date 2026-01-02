@@ -164,59 +164,40 @@ pub fn copy_resource_directories(
     profile_path: &Path,
 ) -> Result<()> {
     let config_dir = harness.config_dir()?;
-    let mut copied_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let resources = [
-        harness.agents(&Scope::Global),
-        harness.commands(&Scope::Global),
-        harness.skills(&Scope::Global),
-    ];
+    let source_dir = if to_profile {
+        &config_dir
+    } else {
+        profile_path
+    };
 
-    for resource_result in resources {
-        if let Ok(Some(dir)) = resource_result {
-            let subdir_name = dir
-                .path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("resource");
-
-            let profile_subdir = profile_path.join(subdir_name);
-            let global_subdir = config_dir.join(subdir_name);
-
-            let (src, dst) = if to_profile {
-                (&global_subdir, &profile_subdir)
-            } else {
-                (&profile_subdir, &global_subdir)
-            };
-
-            if src.exists() && src.is_dir() {
-                copy_dir_recursive(src, dst)?;
-                copied_dirs.insert(subdir_name.to_string());
-            }
-        }
+    if !source_dir.exists() {
+        return Ok(());
     }
 
-    let fallback_dirs = [
-        "agent", "agents", "command", "commands", "skill", "skills", "recipes",
-    ];
+    for entry in std::fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
 
-    for subdir_name in fallback_dirs {
-        if copied_dirs.contains(subdir_name) {
+        if !file_type.is_dir() {
             continue;
         }
 
-        let profile_subdir = profile_path.join(subdir_name);
-        let global_subdir = config_dir.join(subdir_name);
+        let dir_name = entry.file_name();
+        let name_str = dir_name.to_string_lossy();
 
-        let (src, dst) = if to_profile {
-            (&global_subdir, &profile_subdir)
+        if EXCLUDED_DIRS.iter().any(|&ex| name_str == ex) {
+            continue;
+        }
+
+        let src = entry.path();
+        let dst = if to_profile {
+            profile_path.join(&dir_name)
         } else {
-            (&profile_subdir, &global_subdir)
+            config_dir.join(&dir_name)
         };
 
-        if src.exists() && src.is_dir() {
-            copy_dir_recursive(src, dst)?;
-        }
+        copy_dir_recursive(&src, &dst)?;
     }
 
     Ok(())
