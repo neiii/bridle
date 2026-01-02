@@ -2,7 +2,7 @@
 //!
 //! Wraps the `skills-locate` crate to discover installable skills.
 
-use skills_locate::{GitHubRef, extract_file, fetch_bytes, list_files, parse_skill_descriptor};
+use skills_locate::{extract_file, fetch_bytes, list_files, parse_skill_descriptor, GitHubRef};
 use thiserror::Error;
 
 use super::types::{AgentInfo, CommandInfo, DiscoveryResult, McpInfo, SkillInfo, SourceInfo};
@@ -66,6 +66,7 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
         mcp_servers.extend(parse_mcp_json(&content));
     }
 
+    // Discover agents from AGENT.md files (legacy format)
     let agent_paths = list_files(&zip_bytes, "AGENT.md").map_err(DiscoveryError::FetchError)?;
 
     let mut agents = Vec::new();
@@ -75,7 +76,7 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
             Err(_) => continue,
         };
 
-        if let Some(agent) = parse_agent_frontmatter(&content) {
+        if let Some(agent) = parse_agent_frontmatter(&content, &path) {
             agents.push(AgentInfo {
                 name: agent.0,
                 description: agent.1,
@@ -85,6 +86,28 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
         }
     }
 
+    // Discover agents from */agents/*.md directories (claude-code format)
+    let all_md_paths = list_files(&zip_bytes, ".md").map_err(DiscoveryError::FetchError)?;
+    for path in &all_md_paths {
+        if !is_in_agents_dir(path) {
+            continue;
+        }
+        let content = match extract_file(&zip_bytes, path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        if let Some(agent) = parse_agent_frontmatter(&content, path) {
+            agents.push(AgentInfo {
+                name: agent.0,
+                description: agent.1,
+                path: normalize_archive_path(path, &github_ref),
+                content,
+            });
+        }
+    }
+
+    // Discover commands from COMMAND.md files (legacy format)
     let command_paths = list_files(&zip_bytes, "COMMAND.md").map_err(DiscoveryError::FetchError)?;
 
     let mut commands = Vec::new();
@@ -94,11 +117,31 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
             Err(_) => continue,
         };
 
-        if let Some(cmd) = parse_command_frontmatter(&content) {
+        if let Some(cmd) = parse_command_frontmatter(&content, &path) {
             commands.push(CommandInfo {
                 name: cmd.0,
                 description: cmd.1,
                 path: normalize_archive_path(&path, &github_ref),
+                content,
+            });
+        }
+    }
+
+    // Discover commands from */commands/*.md directories (claude-code format)
+    for path in &all_md_paths {
+        if !is_in_commands_dir(path) {
+            continue;
+        }
+        let content = match extract_file(&zip_bytes, path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        if let Some(cmd) = parse_command_frontmatter(&content, path) {
+            commands.push(CommandInfo {
+                name: cmd.0,
+                description: cmd.1,
+                path: normalize_archive_path(path, &github_ref),
                 content,
             });
         }
@@ -187,18 +230,21 @@ fn parse_mcp_json(content: &str) -> Vec<McpInfo> {
     }
 }
 
-fn parse_agent_frontmatter(content: &str) -> Option<(String, Option<String>)> {
-    parse_yaml_frontmatter(content)
+fn parse_agent_frontmatter(content: &str, path: &str) -> Option<(String, Option<String>)> {
+    parse_yaml_frontmatter(content, filename_stem(path))
 }
 
-fn parse_command_frontmatter(content: &str) -> Option<(String, Option<String>)> {
-    parse_yaml_frontmatter(content)
+fn parse_command_frontmatter(content: &str, path: &str) -> Option<(String, Option<String>)> {
+    parse_yaml_frontmatter(content, filename_stem(path))
 }
 
-fn parse_yaml_frontmatter(content: &str) -> Option<(String, Option<String>)> {
+fn parse_yaml_frontmatter(
+    content: &str,
+    fallback_name: Option<&str>,
+) -> Option<(String, Option<String>)> {
     let content = content.trim();
     if !content.starts_with("---") {
-        return None;
+        return fallback_name.map(|n| (n.to_string(), None));
     }
 
     let end = content[3..].find("---")?;
@@ -206,12 +252,17 @@ fn parse_yaml_frontmatter(content: &str) -> Option<(String, Option<String>)> {
 
     #[derive(serde::Deserialize)]
     struct Frontmatter {
-        name: String,
+        name: Option<String>,
         description: Option<String>,
     }
 
     let fm: Frontmatter = serde_yaml::from_str(yaml_content).ok()?;
-    Some((fm.name, fm.description))
+    let name = fm.name.or_else(|| fallback_name.map(String::from))?;
+    Some((name, fm.description))
+}
+
+fn filename_stem(path: &str) -> Option<&str> {
+    path.rsplit('/').next()?.strip_suffix(".md")
 }
 
 fn normalize_archive_path(archive_path: &str, github_ref: &GitHubRef) -> String {
@@ -220,6 +271,14 @@ fn normalize_archive_path(archive_path: &str, github_ref: &GitHubRef) -> String 
         .strip_prefix(&prefix)
         .unwrap_or(archive_path)
         .to_string()
+}
+
+fn is_in_agents_dir(path: &str) -> bool {
+    path.contains("/agents/") && path.ends_with(".md") && !path.ends_with("AGENT.md")
+}
+
+fn is_in_commands_dir(path: &str) -> bool {
+    path.contains("/commands/") && path.ends_with(".md") && !path.ends_with("COMMAND.md")
 }
 
 #[cfg(test)]

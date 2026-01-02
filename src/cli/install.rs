@@ -2,15 +2,34 @@
 
 use std::io::IsTerminal;
 
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::{eyre, Result};
 use dialoguer_multiselect::theme::ColorfulTheme;
-use dialoguer_multiselect::{GroupMultiSelect, MultiSelect};
+use dialoguer_multiselect::GroupMultiSelect;
 
 use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
-use crate::install::discovery::{DiscoveryError, discover_skills};
+use crate::install::discovery::{discover_skills, DiscoveryError};
 use crate::install::installer::install_skills;
-use crate::install::{InstallOptions, InstallTarget};
+use crate::install::{
+    AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
+};
+
+/// Selected components from the discovery result
+struct SelectedComponents {
+    skills: Vec<SkillInfo>,
+    mcp_servers: Vec<McpInfo>,
+    agents: Vec<AgentInfo>,
+    commands: Vec<CommandInfo>,
+}
+
+impl SelectedComponents {
+    fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+            && self.mcp_servers.is_empty()
+            && self.agents.is_empty()
+            && self.commands.is_empty()
+    }
+}
 
 pub fn run(source: &str, force: bool) -> Result<()> {
     if !std::io::stdin().is_terminal() {
@@ -21,48 +40,47 @@ pub fn run(source: &str, force: bool) -> Result<()> {
 
     let url = normalize_source(source);
 
-    eprintln!("Discovering skills from {}...", url);
+    eprintln!("Discovering components from {}...", url);
 
     let discovery = discover_skills(&url).map_err(|e| match e {
         DiscoveryError::InvalidUrl(msg) => eyre!("Invalid URL: {}", msg),
         DiscoveryError::FetchError(e) => eyre!("Failed to fetch repository: {}", e),
-        DiscoveryError::NoSkillsFound => eyre!("No skills found in repository"),
+        DiscoveryError::NoSkillsFound => eyre!("No installable components found in repository"),
     })?;
 
-    if discovery.skills.is_empty() && discovery.mcp_servers.is_empty() {
-        eprintln!("No skills or MCP servers found in {}", url);
+    // Build summary of what was found
+    let mut found_parts = Vec::new();
+    if !discovery.skills.is_empty() {
+        found_parts.push(format!("{} skill(s)", discovery.skills.len()));
+    }
+    if !discovery.mcp_servers.is_empty() {
+        found_parts.push(format!("{} MCP server(s)", discovery.mcp_servers.len()));
+    }
+    if !discovery.agents.is_empty() {
+        found_parts.push(format!("{} agent(s)", discovery.agents.len()));
+    }
+    if !discovery.commands.is_empty() {
+        found_parts.push(format!("{} command(s)", discovery.commands.len()));
+    }
+
+    if found_parts.is_empty() {
+        eprintln!("No installable components found in {}", url);
         return Ok(());
     }
 
     eprintln!(
-        "Found {} skill(s) and {} MCP server(s) from {}/{}",
-        discovery.skills.len(),
-        discovery.mcp_servers.len(),
+        "Found {} from {}/{}",
+        found_parts.join(", "),
         discovery.source.owner,
         discovery.source.repo
     );
 
-    let skill_names: Vec<&str> = discovery.skills.iter().map(|s| s.name.as_str()).collect();
+    let selected = select_components(&discovery)?;
 
-    let Some(selected_indices) = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select skills to install (Esc to cancel)")
-        .items(&skill_names)
-        .defaults(&vec![true; skill_names.len()])
-        .interact_opt()?
-    else {
-        eprintln!("Cancelled");
-        return Ok(());
-    };
-
-    if selected_indices.is_empty() {
-        eprintln!("No skills selected");
+    if selected.is_empty() {
+        eprintln!("No components selected");
         return Ok(());
     }
-
-    let selected_skills: Vec<_> = selected_indices
-        .iter()
-        .map(|&i| discovery.skills[i].clone())
-        .collect();
 
     let targets = select_targets()?;
 
@@ -76,23 +94,155 @@ pub fn run(source: &str, force: bool) -> Result<()> {
     for target in &targets {
         eprintln!("\nInstalling to {}/{}...", target.harness, target.profile);
 
-        let report = install_skills(&selected_skills, target, &options);
+        // Install skills
+        if !selected.skills.is_empty() {
+            let report = install_skills(&selected.skills, target, &options);
 
-        for success in &report.installed {
-            eprintln!("  + Installed: {}", success.skill);
+            for success in &report.installed {
+                eprintln!("  + Installed skill: {}", success.skill);
+            }
+            for skip in &report.skipped {
+                eprintln!("  = Skipped skill: {} (already exists)", skip.skill);
+            }
+            for error in &report.errors {
+                eprintln!(
+                    "  ! Error installing skill {}: {}",
+                    error.skill, error.error
+                );
+            }
         }
 
-        for skip in &report.skipped {
-            eprintln!("  = Skipped: {} (already exists)", skip.skill);
+        // TODO: Install MCP servers, agents, commands when installers are implemented
+        if !selected.mcp_servers.is_empty() {
+            for mcp in &selected.mcp_servers {
+                eprintln!(
+                    "  ~ MCP server: {} (installer not yet implemented)",
+                    mcp.name
+                );
+            }
         }
-
-        for error in &report.errors {
-            eprintln!("  ! Error installing {}: {}", error.skill, error.error);
+        if !selected.agents.is_empty() {
+            for agent in &selected.agents {
+                eprintln!("  ~ Agent: {} (installer not yet implemented)", agent.name);
+            }
+        }
+        if !selected.commands.is_empty() {
+            for cmd in &selected.commands {
+                eprintln!("  ~ Command: {} (installer not yet implemented)", cmd.name);
+            }
         }
     }
 
     eprintln!("\nDone!");
     Ok(())
+}
+
+/// Select components to install using grouped multi-select UI
+fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> {
+    // Build groups for each non-empty category
+    let mut groups: Vec<(&str, Vec<String>, Vec<usize>)> = Vec::new();
+
+    if !discovery.skills.is_empty() {
+        let names: Vec<String> = discovery.skills.iter().map(|s| s.name.clone()).collect();
+        let indices: Vec<usize> = (0..discovery.skills.len()).collect();
+        groups.push(("Skills", names, indices));
+    }
+
+    if !discovery.mcp_servers.is_empty() {
+        let names: Vec<String> = discovery
+            .mcp_servers
+            .iter()
+            .map(|m| m.name.clone())
+            .collect();
+        let indices: Vec<usize> = (0..discovery.mcp_servers.len()).collect();
+        groups.push(("MCP Servers", names, indices));
+    }
+
+    if !discovery.agents.is_empty() {
+        let names: Vec<String> = discovery.agents.iter().map(|a| a.name.clone()).collect();
+        let indices: Vec<usize> = (0..discovery.agents.len()).collect();
+        groups.push(("Agents", names, indices));
+    }
+
+    if !discovery.commands.is_empty() {
+        let names: Vec<String> = discovery.commands.iter().map(|c| c.name.clone()).collect();
+        let indices: Vec<usize> = (0..discovery.commands.len()).collect();
+        groups.push(("Commands", names, indices));
+    }
+
+    if groups.is_empty() {
+        return Ok(SelectedComponents {
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            agents: Vec::new(),
+            commands: Vec::new(),
+        });
+    }
+
+    // All items selected by default
+    let defaults: Vec<Vec<bool>> = groups
+        .iter()
+        .map(|(_, names, _)| vec![true; names.len()])
+        .collect();
+
+    let theme = ColorfulTheme::default();
+    let mut group_select = GroupMultiSelect::new()
+        .with_theme(&theme)
+        .with_prompt("Select components to install (Esc to cancel)")
+        .defaults(defaults);
+
+    for (category, names, _) in &groups {
+        let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        group_select = group_select.group(*category, name_refs);
+    }
+
+    let Some(selections) = group_select.interact_opt()? else {
+        return Ok(SelectedComponents {
+            skills: Vec::new(),
+            mcp_servers: Vec::new(),
+            agents: Vec::new(),
+            commands: Vec::new(),
+        });
+    };
+
+    // Map selections back to discovery items
+    let mut selected = SelectedComponents {
+        skills: Vec::new(),
+        mcp_servers: Vec::new(),
+        agents: Vec::new(),
+        commands: Vec::new(),
+    };
+
+    for (group_idx, selected_indices) in selections.iter().enumerate() {
+        let (category, _, _) = &groups[group_idx];
+        match *category {
+            "Skills" => {
+                for &idx in selected_indices {
+                    selected.skills.push(discovery.skills[idx].clone());
+                }
+            }
+            "MCP Servers" => {
+                for &idx in selected_indices {
+                    selected
+                        .mcp_servers
+                        .push(discovery.mcp_servers[idx].clone());
+                }
+            }
+            "Agents" => {
+                for &idx in selected_indices {
+                    selected.agents.push(discovery.agents[idx].clone());
+                }
+            }
+            "Commands" => {
+                for &idx in selected_indices {
+                    selected.commands.push(discovery.commands[idx].clone());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(selected)
 }
 
 fn normalize_source(source: &str) -> String {
