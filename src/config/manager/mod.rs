@@ -213,12 +213,6 @@ impl ProfileManager {
             .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
             .unwrap_or(false);
 
-        let resource_lookup_path = if is_active {
-            harness.config_dir().unwrap_or_else(|_| path.clone())
-        } else {
-            path.clone()
-        };
-
         let theme = extraction::extract_theme(harness, &path);
         let model = extraction::extract_model(harness, &path);
 
@@ -232,27 +226,27 @@ impl ProfileManager {
             }
         };
 
-        let (skills, err) = extraction::extract_skills(harness, &resource_lookup_path);
+        let (skills, err) = extraction::extract_skills(harness, &path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (commands, err) = extraction::extract_commands(harness, &resource_lookup_path);
+        let (commands, err) = extraction::extract_commands(harness, &path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (plugins, err) = extraction::extract_plugins(harness, &resource_lookup_path);
+        let (plugins, err) = extraction::extract_plugins(harness, &path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (agents, err) = extraction::extract_agents(harness, &resource_lookup_path);
+        let (agents, err) = extraction::extract_agents(harness, &path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (rules_file, err) = extraction::extract_rules_file(harness, &resource_lookup_path);
+        let (rules_file, err) = extraction::extract_rules_file(harness, &path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
