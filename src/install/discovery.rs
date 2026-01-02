@@ -2,7 +2,7 @@
 //!
 //! Wraps the `skills-locate` crate to discover installable skills.
 
-use skills_locate::{extract_file, fetch_bytes, list_files, parse_skill_descriptor, GitHubRef};
+use skills_locate::{GitHubRef, extract_file, fetch_bytes, list_files, parse_skill_descriptor};
 use thiserror::Error;
 
 use super::types::{AgentInfo, CommandInfo, DiscoveryResult, McpInfo, SkillInfo, SourceInfo};

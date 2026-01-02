@@ -12,9 +12,12 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = "0.2.4"
-skills-locate = "0.1.0"
+# harness-locate = "0.2.4"
+# skills-locate = "0.1.0"
 
+
+harness-locate = {path = "../harness-locate/crates/harness-locate"}
+skills-locate = {path = "../harness-locate/crates/skills-locate"}
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 dialoguer-multiselect = "0.12.0"

@@ -2,14 +2,14 @@
 
 use std::io::IsTerminal;
 
-use color_eyre::eyre::{eyre, Result};
-use dialoguer_multiselect::theme::ColorfulTheme;
+use color_eyre::eyre::{Result, eyre};
 use dialoguer_multiselect::GroupMultiSelect;
+use dialoguer_multiselect::theme::ColorfulTheme;
 
 use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
-use crate::install::discovery::{discover_skills, DiscoveryError};
-use crate::install::installer::install_skills;
+use crate::install::discovery::{DiscoveryError, discover_skills};
+use crate::install::installer::{install_agent, install_command, install_skills};
 use crate::install::{
     AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
 };
@@ -112,24 +112,42 @@ pub fn run(source: &str, force: bool) -> Result<()> {
             }
         }
 
-        // TODO: Install MCP servers, agents, commands when installers are implemented
-        if !selected.mcp_servers.is_empty() {
-            for mcp in &selected.mcp_servers {
-                eprintln!(
-                    "  ~ MCP server: {} (installer not yet implemented)",
-                    mcp.name
-                );
+        // Install agents
+        for agent in &selected.agents {
+            match install_agent(agent, target, &options) {
+                Ok(crate::install::installer::InstallOutcome::Installed(success)) => {
+                    eprintln!("  + Installed agent: {}", success.skill);
+                }
+                Ok(crate::install::installer::InstallOutcome::Skipped(skip)) => {
+                    eprintln!("  = Skipped agent: {} (already exists)", skip.skill);
+                }
+                Err(e) => {
+                    eprintln!("  ! Error installing agent {}: {}", agent.name, e);
+                }
             }
         }
-        if !selected.agents.is_empty() {
-            for agent in &selected.agents {
-                eprintln!("  ~ Agent: {} (installer not yet implemented)", agent.name);
+
+        // Install commands
+        for cmd in &selected.commands {
+            match install_command(cmd, target, &options) {
+                Ok(crate::install::installer::InstallOutcome::Installed(success)) => {
+                    eprintln!("  + Installed command: {}", success.skill);
+                }
+                Ok(crate::install::installer::InstallOutcome::Skipped(skip)) => {
+                    eprintln!("  = Skipped command: {} (already exists)", skip.skill);
+                }
+                Err(e) => {
+                    eprintln!("  ! Error installing command {}: {}", cmd.name, e);
+                }
             }
         }
-        if !selected.commands.is_empty() {
-            for cmd in &selected.commands {
-                eprintln!("  ~ Command: {} (installer not yet implemented)", cmd.name);
-            }
+
+        // TODO: Install MCP servers when installer is implemented
+        for mcp in &selected.mcp_servers {
+            eprintln!(
+                "  ~ MCP server: {} (installer not yet implemented)",
+                mcp.name
+            );
         }
     }
 
@@ -266,6 +284,7 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         HarnessKind::OpenCode,
         HarnessKind::ClaudeCode,
         HarnessKind::Goose,
+        HarnessKind::AmpCode,
     ];
 
     let mut groups: Vec<(String, Vec<String>, Vec<InstallTarget>)> = Vec::new();

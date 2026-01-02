@@ -158,46 +158,61 @@ pub fn copy_dir_filtered(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Canonical directory names used inside profiles for resource storage.
+/// These are bridle's internal convention - harness-locate maps them to actual paths.
+pub const CANONICAL_COMMANDS_DIR: &str = "commands";
+pub const CANONICAL_AGENTS_DIR: &str = "agents";
+pub const CANONICAL_SKILLS_DIR: &str = "skills";
+pub const CANONICAL_PLUGINS_DIR: &str = "plugins";
+
+/// Copy resource directories between profile and harness using harness-aware paths.
+///
+/// When `to_profile` is true: harness paths → canonical profile dirs
+/// When `to_profile` is false: canonical profile dirs → harness paths
+///
+/// Uses canonical names inside profiles for cross-harness portability.
 pub fn copy_resource_directories(
     harness: &Harness,
     to_profile: bool,
     profile_path: &Path,
 ) -> Result<()> {
-    let config_dir = harness.config_dir()?;
+    let scope = Scope::Global;
 
-    let source_dir = if to_profile {
-        &config_dir
-    } else {
-        profile_path
-    };
+    let resources: Vec<(&str, Option<std::path::PathBuf>)> = vec![
+        (
+            CANONICAL_COMMANDS_DIR,
+            harness.commands(&scope).ok().flatten().map(|r| r.path),
+        ),
+        (
+            CANONICAL_AGENTS_DIR,
+            harness.agents(&scope).ok().flatten().map(|r| r.path),
+        ),
+        (
+            CANONICAL_SKILLS_DIR,
+            harness.skills(&scope).ok().flatten().map(|r| r.path),
+        ),
+        (
+            CANONICAL_PLUGINS_DIR,
+            harness.plugins(&scope).ok().flatten().map(|r| r.path),
+        ),
+    ];
 
-    if !source_dir.exists() {
-        return Ok(());
-    }
-
-    for entry in std::fs::read_dir(source_dir)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-
-        if !file_type.is_dir() {
+    for (canonical_name, harness_path) in resources {
+        let Some(harness_path) = harness_path else {
             continue;
-        }
-
-        let dir_name = entry.file_name();
-        let name_str = dir_name.to_string_lossy();
-
-        if EXCLUDED_DIRS.iter().any(|&ex| name_str == ex) {
-            continue;
-        }
-
-        let src = entry.path();
-        let dst = if to_profile {
-            profile_path.join(&dir_name)
-        } else {
-            config_dir.join(&dir_name)
         };
 
-        copy_dir_recursive(&src, &dst)?;
+        let profile_resource = profile_path.join(canonical_name);
+
+        let (src, dst) = if to_profile {
+            (harness_path.as_path(), profile_resource.as_path())
+        } else {
+            (profile_resource.as_path(), harness_path.as_path())
+        };
+
+        if src.exists() && src.is_dir() {
+            copy_dir_filtered(src, dst)?;
+        }
     }
 
     Ok(())

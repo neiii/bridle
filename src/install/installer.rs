@@ -56,6 +56,20 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
     }
 }
 
+fn get_agents_dir_name(harness_id: &str) -> &'static str {
+    match harness_id {
+        "opencode" | "oc" => "agent",
+        _ => "agents",
+    }
+}
+
+fn get_commands_dir_name(harness_id: &str) -> &'static str {
+    match harness_id {
+        "opencode" | "oc" => "command",
+        _ => "commands",
+    }
+}
+
 pub fn install_skill(
     skill: &SkillInfo,
     target: &InstallTarget,
@@ -224,8 +238,8 @@ fn install_agent_with_source(
         });
     }
 
-    let agent_dir = profile_dir.join("agents").join(&agent.name);
-    let agent_path = agent_dir.join("AGENT.md");
+    let agents_dir = profile_dir.join(get_agents_dir_name(&target.harness));
+    let agent_path = agents_dir.join(format!("{}.md", &agent.name));
 
     if agent_path.exists() && !options.force {
         return Ok(InstallOutcome::Skipped(InstallSkip {
@@ -235,7 +249,7 @@ fn install_agent_with_source(
         }));
     }
 
-    fs::create_dir_all(&agent_dir).map_err(InstallError::CreateDir)?;
+    fs::create_dir_all(&agents_dir).map_err(InstallError::CreateDir)?;
     fs::write(&agent_path, &agent.content).map_err(InstallError::WriteFile)?;
 
     if let Some(source_info) = source {
@@ -282,8 +296,8 @@ fn install_command_with_source(
         });
     }
 
-    let command_dir = profile_dir.join("commands").join(&command.name);
-    let command_path = command_dir.join("COMMAND.md");
+    let commands_dir = profile_dir.join(get_commands_dir_name(&target.harness));
+    let command_path = commands_dir.join(format!("{}.md", &command.name));
 
     if command_path.exists() && !options.force {
         return Ok(InstallOutcome::Skipped(InstallSkip {
@@ -293,7 +307,7 @@ fn install_command_with_source(
         }));
     }
 
-    fs::create_dir_all(&command_dir).map_err(InstallError::CreateDir)?;
+    fs::create_dir_all(&commands_dir).map_err(InstallError::CreateDir)?;
     fs::write(&command_path, &command.content).map_err(InstallError::WriteFile)?;
 
     if let Some(source_info) = source {

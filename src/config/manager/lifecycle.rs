@@ -66,9 +66,22 @@ impl ProfileManager {
 
         for entry in std::fs::read_dir(&profile_path)? {
             let entry = entry?;
-            let file_type = entry.file_type()?;
-            if file_type.is_file() {
-                std::fs::remove_file(entry.path())?;
+            let path = entry.path();
+            if path.is_file() {
+                std::fs::remove_file(&path)?;
+            } else if path.is_dir() {
+                let name = entry.file_name();
+                if [
+                    files::CANONICAL_COMMANDS_DIR,
+                    files::CANONICAL_AGENTS_DIR,
+                    files::CANONICAL_SKILLS_DIR,
+                    files::CANONICAL_PLUGINS_DIR,
+                ]
+                .iter()
+                .any(|&n| name == n)
+                {
+                    std::fs::remove_dir_all(&path)?;
+                }
             }
         }
 

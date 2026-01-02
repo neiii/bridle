@@ -721,9 +721,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "harness-locate"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "215648f7ab217a13c4d1a8a11c33af23dbdb85e1d48f569ea0c4a91ece589c95"
+version = "0.2.5"
 dependencies = [
  "home",
  "serde",
@@ -1583,8 +1581,6 @@ checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 [[package]]
 name = "skills-locate"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "558f0a10797d3f6b5da9e09ad9080109e168db6003fb0040d75a74de83c44fbf"
 dependencies = [
  "serde",
  "serde_json",
