@@ -3,6 +3,7 @@ mod config;
 mod display;
 mod error;
 mod harness;
+mod install;
 mod tui;
 
 use clap::Parser;

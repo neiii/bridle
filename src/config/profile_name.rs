@@ -9,7 +9,7 @@ use std::fmt;
 /// - Lowercase alphanumeric with hyphens
 /// - No leading or trailing hyphens
 /// - No consecutive hyphens
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct ProfileName(String);
 
 impl ProfileName {
