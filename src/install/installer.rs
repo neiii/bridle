@@ -56,19 +56,11 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
     }
 }
 
-fn get_agents_dir_name(harness_id: &str) -> &'static str {
-    match harness_id {
-        "opencode" | "oc" => "agent",
-        _ => "agents",
-    }
-}
+/// Canonical directory name for agents in profile storage.
+const CANONICAL_AGENTS_DIR: &str = "agents";
 
-fn get_commands_dir_name(harness_id: &str) -> &'static str {
-    match harness_id {
-        "opencode" | "oc" => "command",
-        _ => "commands",
-    }
-}
+/// Canonical directory name for commands in profile storage.
+const CANONICAL_COMMANDS_DIR: &str = "commands";
 
 pub fn install_skill(
     skill: &SkillInfo,
@@ -180,6 +172,88 @@ fn write_to_harness_if_active(
     Ok(Some(harness_skill_path))
 }
 
+fn write_agent_to_harness_if_active(
+    target: &InstallTarget,
+    agent: &AgentInfo,
+) -> Result<Option<PathBuf>, InstallError> {
+    let config = BridleConfig::load().ok();
+    let is_active = config
+        .as_ref()
+        .and_then(|c| c.active_profile_for(&target.harness))
+        .map(|active| active == target.profile.as_str())
+        .unwrap_or(false);
+
+    if !is_active {
+        return Ok(None);
+    }
+
+    let kind = parse_harness_kind(&target.harness)
+        .ok_or_else(|| InstallError::HarnessNotFound(target.harness.clone()))?;
+    let harness =
+        Harness::locate(kind).map_err(|_| InstallError::HarnessNotFound(target.harness.clone()))?;
+
+    let agents_dir = harness
+        .agents(&Scope::Global)
+        .ok()
+        .flatten()
+        .map(|r| r.path)
+        .unwrap_or_else(|| {
+            harness
+                .config_dir()
+                .map(|d| d.join(CANONICAL_AGENTS_DIR))
+                .unwrap_or_default()
+        });
+    let harness_agent_path = agents_dir.join(format!("{}.md", &agent.name));
+
+    if let Some(parent) = harness_agent_path.parent() {
+        fs::create_dir_all(parent).map_err(InstallError::CreateDir)?;
+    }
+    fs::write(&harness_agent_path, &agent.content).map_err(InstallError::WriteFile)?;
+
+    Ok(Some(harness_agent_path))
+}
+
+fn write_command_to_harness_if_active(
+    target: &InstallTarget,
+    command: &CommandInfo,
+) -> Result<Option<PathBuf>, InstallError> {
+    let config = BridleConfig::load().ok();
+    let is_active = config
+        .as_ref()
+        .and_then(|c| c.active_profile_for(&target.harness))
+        .map(|active| active == target.profile.as_str())
+        .unwrap_or(false);
+
+    if !is_active {
+        return Ok(None);
+    }
+
+    let kind = parse_harness_kind(&target.harness)
+        .ok_or_else(|| InstallError::HarnessNotFound(target.harness.clone()))?;
+    let harness =
+        Harness::locate(kind).map_err(|_| InstallError::HarnessNotFound(target.harness.clone()))?;
+
+    let commands_dir = harness
+        .commands(&Scope::Global)
+        .ok()
+        .flatten()
+        .map(|r| r.path)
+        .unwrap_or_else(|| {
+            harness
+                .config_dir()
+                .map(|d| d.join(CANONICAL_COMMANDS_DIR))
+                .unwrap_or_default()
+        });
+    let harness_command_path = commands_dir.join(format!("{}.md", &command.name));
+
+    if let Some(parent) = harness_command_path.parent() {
+        fs::create_dir_all(parent).map_err(InstallError::CreateDir)?;
+    }
+    fs::write(&harness_command_path, &command.content).map_err(InstallError::WriteFile)?;
+
+    Ok(Some(harness_command_path))
+}
+
 fn update_manifest(
     profile_dir: &std::path::Path,
     component_type: ComponentType,
@@ -238,7 +312,7 @@ fn install_agent_with_source(
         });
     }
 
-    let agents_dir = profile_dir.join(get_agents_dir_name(&target.harness));
+    let agents_dir = profile_dir.join(CANONICAL_AGENTS_DIR);
     let agent_path = agents_dir.join(format!("{}.md", &agent.name));
 
     if agent_path.exists() && !options.force {
@@ -256,11 +330,13 @@ fn install_agent_with_source(
         update_manifest(&profile_dir, ComponentType::Agent, &agent.name, source_info);
     }
 
+    let harness_path = write_agent_to_harness_if_active(target, agent)?;
+
     Ok(InstallOutcome::Installed(InstallSuccess {
         skill: agent.name.clone(),
         target: target.clone(),
         profile_path: agent_path,
-        harness_path: None,
+        harness_path,
     }))
 }
 
@@ -296,7 +372,7 @@ fn install_command_with_source(
         });
     }
 
-    let commands_dir = profile_dir.join(get_commands_dir_name(&target.harness));
+    let commands_dir = profile_dir.join(CANONICAL_COMMANDS_DIR);
     let command_path = commands_dir.join(format!("{}.md", &command.name));
 
     if command_path.exists() && !options.force {
@@ -319,11 +395,13 @@ fn install_command_with_source(
         );
     }
 
+    let harness_path = write_command_to_harness_if_active(target, command)?;
+
     Ok(InstallOutcome::Installed(InstallSuccess {
         skill: command.name.clone(),
         target: target.clone(),
         profile_path: command_path,
-        harness_path: None,
+        harness_path,
     }))
 }
 
@@ -486,5 +564,54 @@ mod tests {
         let result =
             install_skill_to_dir(&skill, &target, &InstallOptions::default(), &profiles_dir);
         assert!(matches!(result, Err(InstallError::ProfileNotFound { .. })));
+    }
+
+    #[test]
+    fn install_agent_uses_canonical_agents_dir() {
+        let (_temp, target, _profiles_dir) = setup_test_env();
+
+        let agent = AgentInfo {
+            name: "test-agent".to_string(),
+            description: None,
+            path: "agents/test-agent.md".to_string(),
+            content: "# Test Agent".to_string(),
+        };
+
+        let result = install_agent(&agent, &target, &InstallOptions::default());
+        assert!(result.is_ok());
+
+        if let Ok(InstallOutcome::Installed(success)) = result {
+            assert!(
+                success.profile_path.to_string_lossy().contains("/agents/"),
+                "Expected path to contain '/agents/', got: {:?}",
+                success.profile_path
+            );
+        }
+    }
+
+    #[test]
+    fn install_command_uses_canonical_commands_dir() {
+        let (_temp, target, _profiles_dir) = setup_test_env();
+
+        let command = CommandInfo {
+            name: "test-command".to_string(),
+            description: None,
+            path: "commands/test-command.md".to_string(),
+            content: "# Test Command".to_string(),
+        };
+
+        let result = install_command(&command, &target, &InstallOptions::default());
+        assert!(result.is_ok());
+
+        if let Ok(InstallOutcome::Installed(success)) = result {
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("/commands/"),
+                "Expected path to contain '/commands/', got: {:?}",
+                success.profile_path
+            );
+        }
     }
 }
