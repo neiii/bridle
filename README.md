@@ -50,7 +50,7 @@ bridle install owner/repo
 # 4. Bridle translates paths and configs for each harness automatically
 ```
 
-**Why this matters:** A skill written for Claude Code uses `~/.claude/skills/`. The same skill on OpenCode lives at `~/.config/opencode/skill/`. Bridle handles the translationyou install once, deploy anywhere.
+**Why this matters:** A skill written for Claude Code uses `~/.claude/skills/`. The same skill on OpenCode lives at `~/.config/opencode/skill/`. MCPs follow different JSON/YAML schemas. Bridle handles all these differences for you.
 
 | Component | Claude Code | OpenCode | Goose |
 | --------- | ----------- | -------- | ----- |
