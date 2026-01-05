@@ -11,16 +11,16 @@ use crate::config::jsonc::strip_jsonc_comments;
 #[derive(Debug, thiserror::Error)]
 pub enum McpConfigError {
     #[error("Failed to read config file: {0}")]
-    ReadError(#[from] std::io::Error),
+    Read(#[from] std::io::Error),
 
     #[error("Failed to parse JSON: {0}")]
-    JsonParseError(#[from] serde_json::Error),
+    JsonParse(#[from] serde_json::Error),
 
     #[error("Failed to parse YAML: {0}")]
-    YamlParseError(#[from] serde_yaml::Error),
+    YamlParse(#[from] serde_yaml::Error),
 
     #[error("Failed to write config: {0}")]
-    WriteError(String),
+    Write(String),
 }
 
 fn get_mcp_key(kind: HarnessKind) -> &'static str {
@@ -112,13 +112,13 @@ pub fn write_mcp_config(
 
     let mcp_section = existing
         .as_object_mut()
-        .ok_or_else(|| McpConfigError::WriteError("Config root is not an object".to_string()))?
+        .ok_or_else(|| McpConfigError::Write("Config root is not an object".to_string()))?
         .entry(key)
         .or_insert_with(|| serde_json::json!({}));
 
-    let mcp_obj = mcp_section.as_object_mut().ok_or_else(|| {
-        McpConfigError::WriteError(format!("{} section is not an object", key))
-    })?;
+    let mcp_obj = mcp_section
+        .as_object_mut()
+        .ok_or_else(|| McpConfigError::Write(format!("{} section is not an object", key)))?;
 
     for (name, value) in servers {
         mcp_obj.insert(name.clone(), value.clone());
@@ -168,7 +168,9 @@ fn write_goose_yaml_preserving_comments(
 fn mcp_entry_exists_in_yaml(content: &str, name: &str) -> bool {
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(&format!("{}:", name)) || trimmed.starts_with(&format!("\"{}\":", name)) {
+        if trimmed.starts_with(&format!("{}:", name))
+            || trimmed.starts_with(&format!("\"{}\":", name))
+        {
             return true;
         }
     }
@@ -177,7 +179,7 @@ fn mcp_entry_exists_in_yaml(content: &str, name: &str) -> bool {
 
 fn format_goose_mcp_entry(name: &str, value: &serde_json::Value) -> String {
     let mut lines = vec![format!("  {}:", name)];
-    
+
     if let Some(obj) = value.as_object() {
         for (k, v) in obj {
             match v {
@@ -209,7 +211,7 @@ fn format_goose_mcp_entry(name: &str, value: &serde_json::Value) -> String {
             }
         }
     }
-    
+
     lines.join("\n")
 }
 
@@ -231,13 +233,13 @@ fn insert_into_extensions_section(content: &str, entry: &str) -> String {
         if line.trim() == "extensions:" || line.trim().starts_with("extensions:") {
             found_extensions = true;
             i += 1;
-            
+
             while i < lines.len() {
                 let next_line = lines[i];
                 let is_indented = next_line.starts_with("  ") || next_line.starts_with("\t");
                 let is_empty = next_line.trim().is_empty();
                 let is_comment = next_line.trim().starts_with('#');
-                
+
                 if is_indented || is_empty || is_comment {
                     result.push(next_line.to_string());
                     i += 1;
@@ -245,7 +247,7 @@ fn insert_into_extensions_section(content: &str, entry: &str) -> String {
                     break;
                 }
             }
-            
+
             result.push(entry.to_string());
             inserted = true;
             continue;
@@ -398,11 +400,7 @@ extensions:
     fn write_preserves_existing_mcps() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("config.json");
-        fs::write(
-            &path,
-            r#"{"mcpServers": {"existing": {"command": "old"}}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"mcpServers": {"existing": {"command": "old"}}}"#).unwrap();
 
         let mut servers = HashMap::new();
         servers.insert(
@@ -422,11 +420,7 @@ extensions:
     fn write_preserves_other_config_fields() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("config.json");
-        fs::write(
-            &path,
-            r#"{"model": "claude-4", "mcpServers": {}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"model": "claude-4", "mcpServers": {}}"#).unwrap();
 
         let mut servers = HashMap::new();
         servers.insert("mcp".to_string(), serde_json::json!({"command": "test"}));
@@ -491,11 +485,20 @@ extensions:
         write_mcp_config(HarnessKind::Goose, &path, &servers).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("# Main configuration"), "Header comment preserved");
+        assert!(
+            content.contains("# Main configuration"),
+            "Header comment preserved"
+        );
         assert!(content.contains("# Best model"), "Inline comment preserved");
-        assert!(content.contains("# Extensions section"), "Section comment preserved");
+        assert!(
+            content.contains("# Extensions section"),
+            "Section comment preserved"
+        );
         assert!(content.contains("new-mcp"), "New MCP added");
-        assert!(content.contains("developer"), "Existing extension preserved");
+        assert!(
+            content.contains("developer"),
+            "Existing extension preserved"
+        );
     }
 
     #[test]
@@ -519,8 +522,14 @@ GOOSE_PROVIDER: anthropic
         write_mcp_config(HarnessKind::Goose, &path, &servers).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("# Config without extensions"), "Comment preserved");
-        assert!(content.contains("extensions:"), "Extensions section created");
+        assert!(
+            content.contains("# Config without extensions"),
+            "Comment preserved"
+        );
+        assert!(
+            content.contains("extensions:"),
+            "Extensions section created"
+        );
         assert!(content.contains("new-mcp"), "New MCP added");
     }
 
@@ -548,7 +557,10 @@ GOOSE_PROVIDER: anthropic
 
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("existing-mcp"), "Existing MCP preserved");
-        assert!(content.contains("old-command"), "Existing MCP config preserved");
+        assert!(
+            content.contains("old-command"),
+            "Existing MCP config preserved"
+        );
         assert!(content.contains("new-mcp"), "New MCP added");
     }
 }

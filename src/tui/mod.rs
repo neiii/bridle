@@ -182,10 +182,12 @@ impl App {
         for &kind in &self.harnesses {
             let harness = Harness::new(kind);
             let harness_id = harness.id();
-            if let Some(active_name) = self.bridle_config.active_profile_for(harness_id) {
-                if let Ok(profile_name) = ProfileName::new(active_name) {
-                    let _ = self.manager.save_to_profile(&harness, Some(&harness), &profile_name);
-                }
+            if let Some(active_name) = self.bridle_config.active_profile_for(harness_id)
+                && let Ok(profile_name) = ProfileName::new(active_name)
+            {
+                let _ = self
+                    .manager
+                    .save_to_profile(&harness, Some(&harness), &profile_name);
             }
         }
     }
@@ -405,13 +407,13 @@ impl App {
         let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
-        
+
         // Clear screen and show message while editor is open
-        print!("\x1B[2J\x1B[H");  // Clear screen, move cursor to top-left
+        print!("\x1B[2J\x1B[H"); // Clear screen, move cursor to top-left
         println!("Editing profile: {}", profile.name);
         println!("Close the editor to return to bridle.\n");
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        
+
         let status = std::process::Command::new(&program)
             .args(&args)
             .arg(&profile_path)
