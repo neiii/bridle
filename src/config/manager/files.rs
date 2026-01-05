@@ -344,14 +344,28 @@ mod tests {
 
         struct TestHarness(PathBuf);
         impl HarnessConfig for TestHarness {
-            fn id(&self) -> &str { "test" }
-            fn config_dir(&self) -> crate::error::Result<PathBuf> { Ok(self.0.clone()) }
-            fn installation_status(&self) -> crate::error::Result<harness_locate::InstallationStatus> {
+            fn id(&self) -> &str {
+                "test"
+            }
+            fn config_dir(&self) -> crate::error::Result<PathBuf> {
+                Ok(self.0.clone())
+            }
+            fn installation_status(
+                &self,
+            ) -> crate::error::Result<harness_locate::InstallationStatus> {
                 Ok(harness_locate::InstallationStatus::NotInstalled)
             }
-            fn mcp_filename(&self) -> Option<String> { None }
-            fn mcp_config_path(&self) -> Option<PathBuf> { None }
-            fn parse_mcp_servers(&self, _: &str, _: &str) -> crate::error::Result<Vec<(String, bool)>> {
+            fn mcp_filename(&self) -> Option<String> {
+                None
+            }
+            fn mcp_config_path(&self) -> Option<PathBuf> {
+                None
+            }
+            fn parse_mcp_servers(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> crate::error::Result<Vec<(String, bool)>> {
                 Ok(vec![])
             }
         }

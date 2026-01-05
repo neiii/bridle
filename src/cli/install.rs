@@ -245,21 +245,21 @@ pub fn run(source: &str, force: bool) -> Result<()> {
             let harness_kind = parse_harness_kind(&target.harness);
             for (name, server) in &selected.mcp_servers {
                 // Check transport compatibility before attempting installation
-                if let Some(kind) = harness_kind {
-                    if !is_mcp_compatible(server, kind) {
-                        let transport = match server {
-                            McpServer::Stdio(_) => "stdio",
-                            McpServer::Sse(_) => "SSE",
-                            McpServer::Http(_) => "HTTP",
-                        };
-                        eprintln!(
-                            "  ~ Skipping MCP server: {} ({} transport not supported by {})",
-                            name, transport, target.harness
-                        );
-                        continue;
-                    }
+                if let Some(kind) = harness_kind
+                    && !is_mcp_compatible(server, kind)
+                {
+                    let transport = match server {
+                        McpServer::Stdio(_) => "stdio",
+                        McpServer::Sse(_) => "SSE",
+                        McpServer::Http(_) => "HTTP",
+                    };
+                    eprintln!(
+                        "  ~ Skipping MCP server: {} ({} transport not supported by {})",
+                        name, transport, target.harness
+                    );
+                    continue;
                 }
-                match install_mcp(name, server, &target, &options) {
+                match install_mcp(name, server, target, &options) {
                     Ok(McpInstallOutcome::Installed(success)) => {
                         eprintln!("  + Installed MCP server: {}", success.name);
                     }
@@ -434,10 +434,13 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         let can_install_mcp = compatible_mcp_count > 0;
 
         // Claude Code MCP support is in development (no global MCP config support)
-        let claude_mcp_in_dev = *kind == HarnessKind::ClaudeCode && !selected.mcp_servers.is_empty();
+        let claude_mcp_in_dev =
+            *kind == HarnessKind::ClaudeCode && !selected.mcp_servers.is_empty();
 
-        let can_install_anything =
-            can_install_skills || can_install_agents || can_install_commands || (can_install_mcp && !claude_mcp_in_dev);
+        let can_install_anything = can_install_skills
+            || can_install_agents
+            || can_install_commands
+            || (can_install_mcp && !claude_mcp_in_dev);
 
         let mut skipped: Vec<&str> = Vec::new();
         if !selected.agents.is_empty() && !supports_agents {
@@ -473,7 +476,10 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
                 ItemState::Disabled {
                     reason: "no selected components supported".into(),
                 }
-            } else if !skipped.is_empty() || incompatible_agent_count > 0 || incompatible_mcp_count > 0 {
+            } else if !skipped.is_empty()
+                || incompatible_agent_count > 0
+                || incompatible_mcp_count > 0
+            {
                 let mut warnings: Vec<String> = Vec::new();
                 if !skipped.is_empty() {
                     warnings.push(format!("{} not supported", skipped.join(", ")));
@@ -486,10 +492,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
                 }
                 if incompatible_mcp_count > 0 {
                     let names = get_incompatible_mcp_names(&selected.mcp_servers, *kind);
-                    warnings.push(format!(
-                        "{} incompatible",
-                        names.join(", ")
-                    ));
+                    warnings.push(format!("{} incompatible", names.join(", ")));
                 }
                 ItemState::Warning {
                     message: warnings.join("; "),
@@ -514,7 +517,13 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         } else {
             None
         };
-        groups.push((harness_id.to_string(), items_with_states, targets, defaults, harness_warning));
+        groups.push((
+            harness_id.to_string(),
+            items_with_states,
+            targets,
+            defaults,
+            harness_warning,
+        ));
     }
 
     if groups.is_empty() {

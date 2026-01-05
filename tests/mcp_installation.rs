@@ -178,7 +178,11 @@ fn empty_config_can_receive_first_mcp() {
 
     // Create initial empty config
     let initial = serde_json::json!({"mcpServers": {}});
-    fs::write(&config_path, serde_json::to_string_pretty(&initial).unwrap()).unwrap();
+    fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&initial).unwrap(),
+    )
+    .unwrap();
 
     // Add first MCP
     let mut config: serde_json::Value =

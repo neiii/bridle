@@ -130,13 +130,13 @@ pub fn install_mcp_to_dir(
 
     let native_value = server
         .to_native_value(kind, name)
-        .map_err(|e| InstallError::WriteFile(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| InstallError::WriteFile(std::io::Error::other(e)))?;
 
     let mut servers_to_write: HashMap<String, Value> = HashMap::new();
     servers_to_write.insert(name.to_string(), native_value);
 
     write_mcp_config(kind, &profile_config_path, &servers_to_write)
-        .map_err(|e| InstallError::WriteFile(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| InstallError::WriteFile(std::io::Error::other(e)))?;
 
     let harness_path = write_mcp_to_harness_if_active(name, server, target, kind)?;
 
@@ -174,13 +174,13 @@ fn write_mcp_to_harness_if_active(
 
     let native_value = server
         .to_native_value(kind, name)
-        .map_err(|e| InstallError::WriteFile(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| InstallError::WriteFile(std::io::Error::other(e)))?;
 
     let mut servers_to_write: HashMap<String, Value> = HashMap::new();
     servers_to_write.insert(name.to_string(), native_value);
 
     write_mcp_config(kind, &config_path, &servers_to_write)
-        .map_err(|e| InstallError::WriteFile(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| InstallError::WriteFile(std::io::Error::other(e)))?;
 
     Ok(Some(config_path))
 }
@@ -272,10 +272,12 @@ mod tests {
         assert!(result.is_ok());
 
         if let Ok(McpInstallOutcome::Installed(success)) = result {
-            assert!(success
-                .profile_path
-                .to_string_lossy()
-                .contains("opencode.jsonc"));
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("opencode.jsonc")
+            );
         }
     }
 
@@ -294,10 +296,12 @@ mod tests {
         assert!(result.is_ok());
 
         if let Ok(McpInstallOutcome::Installed(success)) = result {
-            assert!(success
-                .profile_path
-                .to_string_lossy()
-                .contains("config.yaml"));
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("config.yaml")
+            );
 
             let content = fs::read_to_string(&success.profile_path).unwrap();
             assert!(content.contains("extensions:"));
@@ -320,10 +324,12 @@ mod tests {
         assert!(result.is_ok());
 
         if let Ok(McpInstallOutcome::Installed(success)) = result {
-            assert!(success
-                .profile_path
-                .to_string_lossy()
-                .contains("settings.json"));
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("settings.json")
+            );
         }
     }
 
