@@ -401,7 +401,20 @@ impl App {
             return;
         };
 
-        let profile_path = self.manager.profile_path(&harness, &profile_name);
+        // For active profiles, edit the live harness config directly so changes take effect
+        // immediately. For inactive profiles, edit the profile directory (backup).
+        // This prevents sync_active_profiles() from overwriting user edits.
+        let edit_path = if profile.is_active {
+            match harness.config_dir() {
+                Ok(path) => path,
+                Err(e) => {
+                    self.status_message = Some(format!("Cannot get config dir: {}", e));
+                    return;
+                }
+            }
+        } else {
+            self.manager.profile_path(&harness, &profile_name)
+        };
         let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
@@ -414,7 +427,7 @@ impl App {
         
         let status = std::process::Command::new(&program)
             .args(&args)
-            .arg(&profile_path)
+            .arg(&edit_path)
             .status();
         let _ = reinit_terminal_after_editor();
         self.needs_full_redraw = true;
