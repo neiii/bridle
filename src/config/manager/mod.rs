@@ -348,9 +348,17 @@ mod tests {
         }
     }
 
+    fn setup_test_env(temp: &TempDir) {
+        let bridle_config_dir = temp.path().join("bridle_config");
+        fs::create_dir_all(&bridle_config_dir).unwrap();
+        // SAFETY: Tests run single-threaded (--test-threads=1), no concurrent env access
+        unsafe { std::env::set_var("BRIDLE_CONFIG_DIR", &bridle_config_dir) };
+    }
+
     #[test]
     fn switch_profile_preserves_edits() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -423,6 +431,7 @@ mod tests {
     #[test]
     fn switch_profile_restores_mcp_config() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         let mcp_file = temp.path().join(".mcp.json");
@@ -459,6 +468,7 @@ mod tests {
     #[test]
     fn switch_does_full_replace() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -564,6 +574,7 @@ mod tests {
     #[test]
     fn switch_saves_new_directories_to_old_profile() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -600,6 +611,7 @@ mod tests {
     #[test]
     fn deep_nesting_survives_multiple_round_trips() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -646,6 +658,7 @@ mod tests {
     #[test]
     fn wide_directory_structure_preserved() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
