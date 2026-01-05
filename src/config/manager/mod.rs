@@ -466,14 +466,14 @@ mod tests {
     }
 
     #[test]
-    fn switch_does_full_replace() {
+    fn switch_preserves_unknown_files() {
         let temp = TempDir::new().unwrap();
         setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
 
-        let harness = MockHarness::new("test-full-replace", live_config.clone());
+        let harness = MockHarness::new("test-preserve-unknown", live_config.clone());
         let manager = ProfileManager::new(profiles_dir.clone());
 
         fs::write(live_config.join("known.txt"), "profile content").unwrap();
@@ -487,12 +487,12 @@ mod tests {
         manager.switch_profile(&harness, &profile_a).unwrap();
 
         assert!(
-            !live_config.join("extra.txt").exists(),
-            "Extra files should be removed on full replace"
+            live_config.join("extra.txt").exists(),
+            "Unknown files should be preserved after switch"
         );
         assert!(
-            !live_config.join("extra-dir").exists(),
-            "Extra directories should be removed on full replace"
+            live_config.join("extra-dir").exists(),
+            "Unknown directories should be preserved after switch"
         );
         assert!(
             live_config.join("known.txt").exists(),

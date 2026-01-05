@@ -118,17 +118,7 @@ impl ProfileManager {
 
         let target_dir = harness.config_dir()?;
 
-        if target_dir.exists() {
-            for entry in std::fs::read_dir(&target_dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_file() {
-                    std::fs::remove_file(&path)?;
-                } else if path.is_dir() {
-                    std::fs::remove_dir_all(&path)?;
-                }
-            }
-        } else {
+        if !target_dir.exists() {
             std::fs::create_dir_all(&target_dir)?;
         }
 
