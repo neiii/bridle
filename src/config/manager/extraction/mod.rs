@@ -352,6 +352,21 @@ fn extract_model_ampcode(profile_path: &Path) -> Option<String> {
         .map(String::from)
 }
 
+fn dir_name_from_path(path: &Path) -> &str {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("skills")
+}
+
+fn fallback_dir_name(primary: &str) -> Option<&'static str> {
+    match primary {
+        "skill" => Some("skills"),
+        "agent" => Some("agents"),
+        "command" => Some("commands"),
+        _ => None,
+    }
+}
+
 pub fn extract_skills(harness: &Harness, profile_path: &Path) -> (ResourceSummary, Option<String>) {
     if harness.id() == "amp-code" {
         return extract_ampcode_skills(profile_path);
@@ -359,22 +374,29 @@ pub fn extract_skills(harness: &Harness, profile_path: &Path) -> (ResourceSummar
 
     match harness.skills(&Scope::Global) {
         Ok(Some(dir)) => {
-            let summary = extract_resource_summary(profile_path, "skills", &dir.structure);
+            let subdir = dir_name_from_path(&dir.path);
+            let summary = extract_resource_summary(profile_path, subdir, &dir.structure);
             if !summary.items.is_empty() {
                 return (summary, None);
             }
             let md_summary = extract_resource_summary(
                 profile_path,
-                "skills",
+                subdir,
                 &DirectoryStructure::Flat {
                     file_pattern: "*.md".to_string(),
                 },
             );
             if !md_summary.items.is_empty() || md_summary.directory_exists {
-                (md_summary, None)
-            } else {
-                (summary, None)
+                return (md_summary, None);
             }
+            if let Some(fallback) = fallback_dir_name(subdir) {
+                let fallback_summary =
+                    extract_resource_summary(profile_path, fallback, &dir.structure);
+                if !fallback_summary.items.is_empty() {
+                    return (fallback_summary, None);
+                }
+            }
+            (summary, None)
         }
         Ok(None) => (ResourceSummary::default(), None),
         Err(e) => (ResourceSummary::default(), Some(format!("skills: {}", e))),
@@ -429,10 +451,23 @@ pub fn extract_commands(
     }
 
     let dir_result = match harness.commands(&Scope::Global) {
-        Ok(Some(dir)) => (
-            extract_resource_summary(profile_path, "commands", &dir.structure),
-            None,
-        ),
+        Ok(Some(dir)) => {
+            let subdir = dir_name_from_path(&dir.path);
+            let summary = extract_resource_summary(profile_path, subdir, &dir.structure);
+            if !summary.items.is_empty() {
+                (summary, None)
+            } else if let Some(fallback) = fallback_dir_name(subdir) {
+                let fallback_summary =
+                    extract_resource_summary(profile_path, fallback, &dir.structure);
+                if !fallback_summary.items.is_empty() {
+                    (fallback_summary, None)
+                } else {
+                    (summary, None)
+                }
+            } else {
+                (summary, None)
+            }
+        }
         Ok(None) => (ResourceSummary::default(), None),
         Err(e) => (ResourceSummary::default(), Some(format!("commands: {}", e))),
     };
@@ -730,19 +765,28 @@ pub fn extract_agents(
 ) -> (Option<ResourceSummary>, Option<String>) {
     let dir_result = match harness.agents(&Scope::Global) {
         Ok(Some(dir)) => {
-            let summary = extract_resource_summary(profile_path, "agents", &dir.structure);
+            let subdir = dir_name_from_path(&dir.path);
+            let summary = extract_resource_summary(profile_path, subdir, &dir.structure);
             if !summary.items.is_empty() {
                 (Some(summary), None)
             } else {
                 let md_summary = extract_resource_summary(
                     profile_path,
-                    "agents",
+                    subdir,
                     &DirectoryStructure::Flat {
                         file_pattern: "*.md".to_string(),
                     },
                 );
                 if !md_summary.items.is_empty() || md_summary.directory_exists {
                     (Some(md_summary), None)
+                } else if let Some(fallback) = fallback_dir_name(subdir) {
+                    let fallback_summary =
+                        extract_resource_summary(profile_path, fallback, &dir.structure);
+                    if !fallback_summary.items.is_empty() {
+                        (Some(fallback_summary), None)
+                    } else {
+                        (Some(summary), None)
+                    }
                 } else {
                     (Some(summary), None)
                 }
@@ -946,4 +990,75 @@ pub fn list_subdirs_with_file(dir: &Path, subdir_pattern: &str, file_name: &str)
             items
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn dir_name_from_path_extracts_final_component() {
+        assert_eq!(dir_name_from_path(Path::new("/foo/bar/skill")), "skill");
+        assert_eq!(dir_name_from_path(Path::new("/foo/bar/skills")), "skills");
+        assert_eq!(dir_name_from_path(Path::new("agent")), "agent");
+        assert_eq!(dir_name_from_path(Path::new("/command")), "command");
+    }
+
+    #[test]
+    fn dir_name_from_path_handles_trailing_slash() {
+        assert_eq!(dir_name_from_path(Path::new("/foo/bar/skill/")), "skill");
+    }
+
+    #[test]
+    fn opencode_uses_singular_directory_names() {
+        let harness = Harness::new(harness_locate::HarnessKind::OpenCode);
+
+        if let Ok(Some(skills_dir)) = harness.skills(&Scope::Global) {
+            let name = dir_name_from_path(&skills_dir.path);
+            assert_eq!(
+                name, "skill",
+                "OpenCode skills directory should be 'skill' (singular)"
+            );
+        }
+
+        if let Ok(Some(agents_dir)) = harness.agents(&Scope::Global) {
+            let name = dir_name_from_path(&agents_dir.path);
+            assert_eq!(
+                name, "agent",
+                "OpenCode agents directory should be 'agent' (singular)"
+            );
+        }
+
+        if let Ok(Some(commands_dir)) = harness.commands(&Scope::Global) {
+            let name = dir_name_from_path(&commands_dir.path);
+            assert_eq!(
+                name, "command",
+                "OpenCode commands directory should be 'command' (singular)"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_uses_plural_directory_names() {
+        let harness = Harness::new(harness_locate::HarnessKind::ClaudeCode);
+
+        if let Ok(Some(skills_dir)) = harness.skills(&Scope::Global) {
+            let name = dir_name_from_path(&skills_dir.path);
+            assert_eq!(
+                name, "skills",
+                "Claude skills directory should be 'skills' (plural)"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_dir_name_maps_singular_to_plural() {
+        assert_eq!(fallback_dir_name("skill"), Some("skills"));
+        assert_eq!(fallback_dir_name("agent"), Some("agents"));
+        assert_eq!(fallback_dir_name("command"), Some("commands"));
+        assert_eq!(fallback_dir_name("skills"), None);
+        assert_eq!(fallback_dir_name("agents"), None);
+        assert_eq!(fallback_dir_name("other"), None);
+    }
 }

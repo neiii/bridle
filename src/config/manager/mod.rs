@@ -348,9 +348,17 @@ mod tests {
         }
     }
 
+    fn setup_test_env(temp: &TempDir) {
+        let bridle_config_dir = temp.path().join("bridle_config");
+        fs::create_dir_all(&bridle_config_dir).unwrap();
+        // SAFETY: Tests run single-threaded (--test-threads=1), no concurrent env access
+        unsafe { std::env::set_var("BRIDLE_CONFIG_DIR", &bridle_config_dir) };
+    }
+
     #[test]
     fn switch_profile_preserves_edits() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -423,6 +431,7 @@ mod tests {
     #[test]
     fn switch_profile_restores_mcp_config() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         let mcp_file = temp.path().join(".mcp.json");
@@ -457,13 +466,14 @@ mod tests {
     }
 
     #[test]
-    fn switch_does_full_replace() {
+    fn switch_preserves_unknown_files() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
 
-        let harness = MockHarness::new("test-full-replace", live_config.clone());
+        let harness = MockHarness::new("test-preserve-unknown", live_config.clone());
         let manager = ProfileManager::new(profiles_dir.clone());
 
         fs::write(live_config.join("known.txt"), "profile content").unwrap();
@@ -477,12 +487,12 @@ mod tests {
         manager.switch_profile(&harness, &profile_a).unwrap();
 
         assert!(
-            !live_config.join("extra.txt").exists(),
-            "Extra files should be removed on full replace"
+            live_config.join("extra.txt").exists(),
+            "Unknown files should be preserved after switch"
         );
         assert!(
-            !live_config.join("extra-dir").exists(),
-            "Extra directories should be removed on full replace"
+            live_config.join("extra-dir").exists(),
+            "Unknown directories should be preserved after switch"
         );
         assert!(
             live_config.join("known.txt").exists(),
@@ -564,6 +574,7 @@ mod tests {
     #[test]
     fn switch_saves_new_directories_to_old_profile() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -600,6 +611,7 @@ mod tests {
     #[test]
     fn deep_nesting_survives_multiple_round_trips() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -646,6 +658,7 @@ mod tests {
     #[test]
     fn wide_directory_structure_preserved() {
         let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();

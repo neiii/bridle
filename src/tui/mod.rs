@@ -427,6 +427,17 @@ impl App {
         println!("Close the editor to return to bridle.\n");
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
+        // On Windows, use cmd /c to invoke the editor so that .cmd/.bat wrappers
+        // (like VS Code's `code.cmd`) are resolved correctly.
+        #[cfg(windows)]
+        let status = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg(&program)
+            .args(&args)
+            .arg(&edit_path)
+            .status();
+
+        #[cfg(not(windows))]
         let status = std::process::Command::new(&program)
             .args(&args)
             .arg(&edit_path)

@@ -144,6 +144,18 @@ pub fn edit_profile(harness_name: &str, profile_name: &str) -> Result<()> {
 
     let config = crate::config::BridleConfig::load().unwrap_or_default();
     let (program, args) = config.editor_command();
+
+    // On Windows, use cmd /c to invoke the editor so that .cmd/.bat wrappers
+    // (like VS Code's `code.cmd`) are resolved correctly.
+    #[cfg(windows)]
+    let status = std::process::Command::new("cmd")
+        .arg("/c")
+        .arg(&program)
+        .args(&args)
+        .arg(&profile_path)
+        .status()?;
+
+    #[cfg(not(windows))]
     let status = std::process::Command::new(&program)
         .args(&args)
         .arg(&profile_path)

@@ -92,9 +92,7 @@ impl BridleConfig {
 
     /// Get the default configuration file path.
     pub fn config_path() -> crate::error::Result<PathBuf> {
-        harness_locate::platform::config_dir()
-            .map(|d| d.join("bridle").join("config.toml"))
-            .map_err(|e| crate::error::Error::NoConfigFound(e.to_string()))
+        Self::config_dir().map(|d| d.join("config.toml"))
     }
 
     /// Get the configuration directory path.
