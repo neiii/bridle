@@ -108,6 +108,16 @@ impl ProfileManager {
         }
 
         let harness_id = harness.id();
+
+        // Check if already on this profile - if so, it's a no-op
+        // (avoids wiping changes made since activation)
+        if let Ok(config) = BridleConfig::load()
+            && let Some(active_name) = config.active_profile_for(harness_id)
+            && active_name == name.as_str()
+        {
+            return Ok(profile_path);
+        }
+
         let saved_to_profile = if let Ok(config) = BridleConfig::load()
             && let Some(active_name) = config.active_profile_for(harness_id)
             && let Ok(active_profile) = ProfileName::new(active_name)
