@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use chrono::Local;
 use harness_locate::{Harness, HarnessKind, Scope};
 
 use crate::error::Result;
@@ -105,6 +106,103 @@ pub fn copy_all_contents(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Safely switches harness config directory to match profile contents.
+///
+/// Uses backup-wipe-copy pattern with automatic rollback on failure.
+/// This ensures complete profile isolation - the config_dir will contain
+/// EXACTLY what the profile contains, nothing more.
+///
+/// # Errors
+/// Returns error if profile_path doesn't exist or any filesystem operation fails.
+/// On copy failure, attempts restore from backup before returning error.
+pub fn switch_config_dir_safely(
+    profile_path: &Path,
+    config_dir: &Path,
+    backup_dir: &Path,
+) -> Result<()> {
+    use crate::error::Error;
+
+    // Precondition: profile must exist
+    if !profile_path.exists() {
+        return Err(Error::ProfileNotFound(profile_path.display().to_string()));
+    }
+
+    // Create uniquely-named backup (millis + pid to prevent collision)
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
+    let backup_path = backup_dir.join(format!("{}_{}", timestamp, std::process::id()));
+
+    // Backup current config_dir contents
+    let has_backup = if config_dir.exists() && std::fs::read_dir(config_dir)?.next().is_some() {
+        std::fs::create_dir_all(&backup_path)?;
+        copy_all_contents(config_dir, &backup_path)?;
+        true
+    } else {
+        false
+    };
+
+    // Wipe config_dir contents (symlink-safe using file_type)
+    if config_dir.exists() {
+        for entry in std::fs::read_dir(config_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                std::fs::remove_dir_all(&path)?;
+            } else {
+                std::fs::remove_file(&path)?;
+            }
+        }
+    }
+
+    // Copy profile contents
+    let copy_result = copy_all_contents(profile_path, config_dir);
+
+    match copy_result {
+        Ok(()) => {
+            // Success: delete backup (best-effort)
+            if has_backup {
+                let _ = std::fs::remove_dir_all(&backup_path);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Profile switch failed, restoring from backup...");
+
+            // Wipe partial copy (best-effort, continue even if individual deletes fail)
+            if config_dir.exists() {
+                for entry in std::fs::read_dir(config_dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
+                    let path = entry.path();
+                    let file_type = entry.file_type();
+                    let _ = match file_type {
+                        Ok(ft) if ft.is_dir() => std::fs::remove_dir_all(&path),
+                        _ => std::fs::remove_file(&path),
+                    };
+                }
+            }
+
+            // Restore from backup if we have one
+            if has_backup && backup_path.exists() {
+                if let Err(restore_err) = copy_all_contents(&backup_path, config_dir) {
+                    // Restore failed - keep backup, return compound error
+                    return Err(Error::Config(format!(
+                        "Profile switch failed ({}), restore also failed ({}). Backup preserved at: {}",
+                        e,
+                        restore_err,
+                        backup_path.display()
+                    )));
+                }
+                let _ = std::fs::remove_dir_all(&backup_path);
+            }
+
+            Err(e)
+        }
+    }
 }
 
 pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
@@ -417,5 +515,61 @@ mod tests {
         );
         let link_target = fs::read_link(&link_path).unwrap();
         assert_eq!(link_target.to_str().unwrap(), "target.txt");
+    }
+
+    #[test]
+    fn switch_config_dir_safely_creates_backup() {
+        let temp = TempDir::new().unwrap();
+        let config_dir = temp.path().join("config");
+        let profile_dir = temp.path().join("profile");
+        let backup_dir = temp.path().join("backups");
+
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(config_dir.join("old.txt"), "old content").unwrap();
+
+        fs::create_dir_all(&profile_dir).unwrap();
+        fs::write(profile_dir.join("new.txt"), "new content").unwrap();
+
+        switch_config_dir_safely(&profile_dir, &config_dir, &backup_dir).unwrap();
+
+        assert!(config_dir.join("new.txt").exists());
+        assert!(!config_dir.join("old.txt").exists());
+
+        assert!(
+            !backup_dir.exists() || fs::read_dir(&backup_dir).unwrap().count() == 0,
+            "Backup should be cleaned up on success"
+        );
+    }
+
+    #[test]
+    fn switch_config_dir_safely_to_empty_profile() {
+        let temp = TempDir::new().unwrap();
+        let config_dir = temp.path().join("config");
+        let profile_dir = temp.path().join("profile");
+        let backup_dir = temp.path().join("backups");
+
+        fs::create_dir_all(config_dir.join("skills/my-skill")).unwrap();
+        fs::write(config_dir.join("skills/my-skill/SKILL.md"), "# Skill").unwrap();
+
+        fs::create_dir_all(&profile_dir).unwrap();
+
+        switch_config_dir_safely(&profile_dir, &config_dir, &backup_dir).unwrap();
+
+        assert!(!config_dir.join("skills").exists());
+    }
+
+    #[test]
+    fn switch_config_dir_safely_preserves_on_empty_config() {
+        let temp = TempDir::new().unwrap();
+        let config_dir = temp.path().join("config");
+        let profile_dir = temp.path().join("profile");
+        let backup_dir = temp.path().join("backups");
+
+        fs::create_dir_all(&profile_dir).unwrap();
+        fs::write(profile_dir.join("config.json"), "{}").unwrap();
+
+        switch_config_dir_safely(&profile_dir, &config_dir, &backup_dir).unwrap();
+
+        assert!(config_dir.join("config.json").exists());
     }
 }

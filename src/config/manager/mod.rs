@@ -476,23 +476,41 @@ mod tests {
         let harness = MockHarness::new("test-preserve-unknown", live_config.clone());
         let manager = ProfileManager::new(profiles_dir.clone());
 
+        // Create two profiles
         fs::write(live_config.join("known.txt"), "profile content").unwrap();
         let profile_a = ProfileName::new("profile-a").unwrap();
+        let profile_b = ProfileName::new("profile-b").unwrap();
         manager.create_from_current(&harness, &profile_a).unwrap();
+        manager.create_from_current(&harness, &profile_b).unwrap();
 
+        // Activate profile-a
+        manager.switch_profile(&harness, &profile_a).unwrap();
+
+        // Add extra files while profile-a is active
         fs::write(live_config.join("extra.txt"), "extra data").unwrap();
         fs::create_dir_all(live_config.join("extra-dir")).unwrap();
         fs::write(live_config.join("extra-dir/nested.txt"), "nested").unwrap();
 
+        // Switch to profile-b (saves current state including extra files to profile-a)
+        manager.switch_profile(&harness, &profile_b).unwrap();
+
+        // Verify extra files are NOT in harness (full isolation - profile-b doesn't have them)
+        assert!(
+            !live_config.join("extra.txt").exists(),
+            "Extra files should not exist after switching to profile-b"
+        );
+
+        // Switch back to profile-a
         manager.switch_profile(&harness, &profile_a).unwrap();
 
+        // Now extra files should be restored (they were saved to profile-a)
         assert!(
             live_config.join("extra.txt").exists(),
-            "Unknown files should be preserved after switch"
+            "Unknown files should be restored after switching back to profile-a"
         );
         assert!(
             live_config.join("extra-dir").exists(),
-            "Unknown directories should be preserved after switch"
+            "Unknown directories should be restored after switching back"
         );
         assert!(
             live_config.join("known.txt").exists(),
@@ -756,5 +774,767 @@ mod tests {
 
         assert!(!result.directory_exists);
         assert!(result.items.is_empty());
+    }
+
+    // ==========================================================================
+    // Profile Isolation Tests (GitHub Issue #21)
+    //
+    // These tests verify that resources (skills, agents, commands) installed to
+    // one profile do NOT leak to other profiles during profile switching.
+    //
+    // Bug: When switching from profile A (with skills) to profile B (empty),
+    // the skills remain in the harness config dir. When later switching away
+    // from B, those skills get saved TO profile B, contaminating it.
+    // ==========================================================================
+
+    /// Test that skills installed to one profile don't leak to another profile
+    /// when switching profiles.
+    ///
+    /// This test reproduces GitHub Issue #21:
+    /// 1. Create two empty profiles (default, test)
+    /// 2. "Install" a skill while default is active (add to harness dir)
+    /// 3. Switch to test profile
+    /// 4. Switch back to default (this saves harness state → test profile)
+    /// 5. Verify: test profile should NOT have the skill
+    #[test]
+    fn switch_profile_does_not_leak_skills_to_other_profiles() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-skill-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Create two empty profiles
+        let profile_default = ProfileName::new("default").unwrap();
+        let profile_test = ProfileName::new("test").unwrap();
+
+        fs::write(live_config.join("config.json"), "{}").unwrap();
+        manager
+            .create_from_current(&harness, &profile_default)
+            .unwrap();
+        manager
+            .create_from_current(&harness, &profile_test)
+            .unwrap();
+
+        // Activate default profile
+        manager.switch_profile(&harness, &profile_default).unwrap();
+
+        // Simulate installing a skill while default is active
+        // (skills are stored in harness config dir)
+        let skills_dir = live_config.join("skills");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::create_dir_all(skills_dir.join("algorithmic-art")).unwrap();
+        fs::write(
+            skills_dir.join("algorithmic-art/SKILL.md"),
+            "# Algorithmic Art Skill",
+        )
+        .unwrap();
+
+        // Verify skill exists in harness dir
+        assert!(
+            live_config.join("skills/algorithmic-art/SKILL.md").exists(),
+            "Skill should be installed in harness dir"
+        );
+
+        // Switch to test profile (should save current state to default, load test)
+        manager.switch_profile(&harness, &profile_test).unwrap();
+
+        // BUG CHECK: After switching to test, skills should NOT be in harness dir
+        // because test profile was empty when created
+        assert!(
+            !live_config.join("skills").exists(),
+            "Skills directory should NOT exist after switching to empty test profile"
+        );
+
+        // Switch to another profile and back to test to trigger the leak
+        manager.switch_profile(&harness, &profile_default).unwrap();
+        manager.switch_profile(&harness, &profile_test).unwrap();
+
+        // CRITICAL: test profile should NOT have acquired skills from default
+        let test_profile_path = profiles_dir.join("test-skill-isolation/test");
+        assert!(
+            !test_profile_path.join("skills").exists(),
+            "test profile should NOT have skills directory - skills leaked from default!"
+        );
+    }
+
+    /// Test that switching to an empty profile clears harness resources.
+    ///
+    /// When profile B is empty, switching to it should result in an empty
+    /// harness config (except for base config files in the profile).
+    #[test]
+    fn switch_to_empty_profile_clears_harness_resources() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-empty-switch", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir);
+
+        // Create profile-a with skills
+        fs::write(live_config.join("config.json"), r#"{"name":"a"}"#).unwrap();
+        fs::create_dir_all(live_config.join("skills/my-skill")).unwrap();
+        fs::write(live_config.join("skills/my-skill/SKILL.md"), "# Skill").unwrap();
+
+        let profile_a = ProfileName::new("profile-a").unwrap();
+        manager.create_from_current(&harness, &profile_a).unwrap();
+
+        // Verify profile-a has skills
+        let profile_a_path = manager.profile_path(&harness, &profile_a);
+        assert!(
+            profile_a_path.join("skills/my-skill/SKILL.md").exists(),
+            "profile-a should have skills"
+        );
+
+        // Create profile-b WITHOUT skills (empty except config)
+        fs::remove_dir_all(live_config.join("skills")).unwrap();
+        fs::write(live_config.join("config.json"), r#"{"name":"b"}"#).unwrap();
+
+        let profile_b = ProfileName::new("profile-b").unwrap();
+        manager.create_from_current(&harness, &profile_b).unwrap();
+
+        // Verify profile-b does NOT have skills
+        let profile_b_path = manager.profile_path(&harness, &profile_b);
+        assert!(
+            !profile_b_path.join("skills").exists(),
+            "profile-b should NOT have skills"
+        );
+
+        // Now switch to profile-a (which has skills)
+        manager.switch_profile(&harness, &profile_a).unwrap();
+        assert!(
+            live_config.join("skills/my-skill/SKILL.md").exists(),
+            "After switching to profile-a, skills should be in harness dir"
+        );
+
+        // Switch to profile-b (which is empty)
+        manager.switch_profile(&harness, &profile_b).unwrap();
+
+        // BUG: This assertion will fail - skills remain in harness dir
+        assert!(
+            !live_config.join("skills").exists(),
+            "After switching to profile-b (empty), skills should be REMOVED from harness dir"
+        );
+    }
+
+    /// Test that agents don't leak between profiles.
+    #[test]
+    fn switch_profile_does_not_leak_agents() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-agent-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Create profile with agents
+        fs::write(live_config.join("config.json"), "{}").unwrap();
+        fs::create_dir_all(live_config.join("agents/my-agent")).unwrap();
+        fs::write(live_config.join("agents/my-agent/index.md"), "# Agent").unwrap();
+
+        let profile_with_agents = ProfileName::new("with-agents").unwrap();
+        manager
+            .create_from_current(&harness, &profile_with_agents)
+            .unwrap();
+
+        // Create empty profile
+        fs::remove_dir_all(live_config.join("agents")).unwrap();
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Switch to profile with agents
+        manager
+            .switch_profile(&harness, &profile_with_agents)
+            .unwrap();
+        assert!(live_config.join("agents").exists());
+
+        // Switch to empty profile
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Agents should not be in harness dir
+        assert!(
+            !live_config.join("agents").exists(),
+            "Agents should be removed when switching to empty profile"
+        );
+
+        // Switch back and forth to trigger potential leak
+        manager
+            .switch_profile(&harness, &profile_with_agents)
+            .unwrap();
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Empty profile should still be empty
+        let empty_profile_path = profiles_dir.join("test-agent-isolation/empty");
+        assert!(
+            !empty_profile_path.join("agents").exists(),
+            "Empty profile should NOT have acquired agents"
+        );
+    }
+
+    /// Test that commands don't leak between profiles.
+    #[test]
+    fn switch_profile_does_not_leak_commands() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-cmd-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Create profile with commands
+        fs::write(live_config.join("config.json"), "{}").unwrap();
+        fs::create_dir_all(live_config.join("commands/my-cmd")).unwrap();
+        fs::write(live_config.join("commands/my-cmd/index.md"), "# Command").unwrap();
+
+        let profile_with_cmds = ProfileName::new("with-cmds").unwrap();
+        manager
+            .create_from_current(&harness, &profile_with_cmds)
+            .unwrap();
+
+        // Create empty profile
+        fs::remove_dir_all(live_config.join("commands")).unwrap();
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Switch to profile with commands
+        manager
+            .switch_profile(&harness, &profile_with_cmds)
+            .unwrap();
+        assert!(live_config.join("commands").exists());
+
+        // Switch to empty profile
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Commands should not be in harness dir
+        assert!(
+            !live_config.join("commands").exists(),
+            "Commands should be removed when switching to empty profile"
+        );
+
+        // Verify empty profile wasn't contaminated
+        let empty_profile_path = profiles_dir.join("test-cmd-isolation/empty");
+        assert!(
+            !empty_profile_path.join("commands").exists(),
+            "Empty profile should NOT have acquired commands"
+        );
+    }
+
+    /// Test that multiple resource types don't leak simultaneously.
+    /// This simulates a realistic scenario where a profile has skills, agents,
+    /// and commands installed.
+    #[test]
+    fn switch_profile_does_not_leak_multiple_resource_types() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-multi-resource", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Create "full" profile with all resource types
+        fs::write(live_config.join("config.json"), r#"{"profile":"full"}"#).unwrap();
+        fs::create_dir_all(live_config.join("skills/skill1")).unwrap();
+        fs::write(live_config.join("skills/skill1/SKILL.md"), "# Skill").unwrap();
+        fs::create_dir_all(live_config.join("agents/agent1")).unwrap();
+        fs::write(live_config.join("agents/agent1/index.md"), "# Agent").unwrap();
+        fs::create_dir_all(live_config.join("commands/cmd1")).unwrap();
+        fs::write(live_config.join("commands/cmd1/index.md"), "# Command").unwrap();
+
+        let profile_full = ProfileName::new("full").unwrap();
+        manager
+            .create_from_current(&harness, &profile_full)
+            .unwrap();
+
+        // Create "minimal" profile with NO resources
+        for dir in ["skills", "agents", "commands"] {
+            let _ = fs::remove_dir_all(live_config.join(dir));
+        }
+        fs::write(live_config.join("config.json"), r#"{"profile":"minimal"}"#).unwrap();
+
+        let profile_minimal = ProfileName::new("minimal").unwrap();
+        manager
+            .create_from_current(&harness, &profile_minimal)
+            .unwrap();
+
+        // Switch to full profile
+        manager.switch_profile(&harness, &profile_full).unwrap();
+
+        // Verify all resources are present
+        assert!(live_config.join("skills").exists(), "skills should exist");
+        assert!(live_config.join("agents").exists(), "agents should exist");
+        assert!(
+            live_config.join("commands").exists(),
+            "commands should exist"
+        );
+
+        // Switch to minimal profile
+        manager.switch_profile(&harness, &profile_minimal).unwrap();
+
+        // ALL resources should be gone
+        assert!(
+            !live_config.join("skills").exists(),
+            "skills should be removed"
+        );
+        assert!(
+            !live_config.join("agents").exists(),
+            "agents should be removed"
+        );
+        assert!(
+            !live_config.join("commands").exists(),
+            "commands should be removed"
+        );
+
+        // Verify minimal profile wasn't contaminated after round-trip
+        manager.switch_profile(&harness, &profile_full).unwrap();
+        manager.switch_profile(&harness, &profile_minimal).unwrap();
+
+        let minimal_path = profiles_dir.join("test-multi-resource/minimal");
+        assert!(
+            !minimal_path.join("skills").exists(),
+            "minimal profile should NOT have skills"
+        );
+        assert!(
+            !minimal_path.join("agents").exists(),
+            "minimal profile should NOT have agents"
+        );
+        assert!(
+            !minimal_path.join("commands").exists(),
+            "minimal profile should NOT have commands"
+        );
+    }
+
+    /// Test profile isolation with OpenCode-style directory naming.
+    /// OpenCode uses "skill" (singular) instead of "skills".
+    #[test]
+    fn switch_profile_isolation_opencode_style() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("opencode-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // OpenCode uses singular names: skill, agent, command
+        fs::write(live_config.join("opencode.jsonc"), "{}").unwrap();
+        fs::create_dir_all(live_config.join("skill/algorithmic-art")).unwrap();
+        fs::write(live_config.join("skill/algorithmic-art/SKILL.md"), "# Art").unwrap();
+        fs::create_dir_all(live_config.join("agent/my-agent")).unwrap();
+        fs::write(live_config.join("agent/my-agent/index.md"), "# Agent").unwrap();
+
+        let profile_full = ProfileName::new("full").unwrap();
+        manager
+            .create_from_current(&harness, &profile_full)
+            .unwrap();
+
+        // Create empty profile
+        fs::remove_dir_all(live_config.join("skill")).unwrap();
+        fs::remove_dir_all(live_config.join("agent")).unwrap();
+        fs::write(live_config.join("opencode.jsonc"), "{}").unwrap();
+
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Switch full -> empty
+        manager.switch_profile(&harness, &profile_full).unwrap();
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Harness should be clean
+        assert!(
+            !live_config.join("skill").exists(),
+            "OpenCode skill dir should be removed"
+        );
+        assert!(
+            !live_config.join("agent").exists(),
+            "OpenCode agent dir should be removed"
+        );
+
+        // Empty profile should stay empty
+        let empty_path = profiles_dir.join("opencode-isolation/empty");
+        assert!(
+            !empty_path.join("skill").exists(),
+            "Empty profile should NOT have skill dir"
+        );
+    }
+
+    /// Test profile isolation with Claude Code plugin structure.
+    /// Claude Code stores agents/commands inside plugins directory.
+    #[test]
+    fn switch_profile_isolation_claude_style() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("claude-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Claude uses: skills/, plugins/<name>/agents/, plugins/<name>/commands/
+        fs::write(live_config.join("settings.json"), "{}").unwrap();
+        fs::create_dir_all(live_config.join("skills/my-skill")).unwrap();
+        fs::write(live_config.join("skills/my-skill/SKILL.md"), "# Skill").unwrap();
+        fs::create_dir_all(live_config.join("plugins/bridle/agents/my-agent")).unwrap();
+        fs::write(
+            live_config.join("plugins/bridle/agents/my-agent/index.md"),
+            "# Agent",
+        )
+        .unwrap();
+
+        let profile_full = ProfileName::new("full").unwrap();
+        manager
+            .create_from_current(&harness, &profile_full)
+            .unwrap();
+
+        // Create empty profile
+        fs::remove_dir_all(live_config.join("skills")).unwrap();
+        fs::remove_dir_all(live_config.join("plugins")).unwrap();
+
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Switch full -> empty
+        manager.switch_profile(&harness, &profile_full).unwrap();
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Harness should be clean
+        assert!(
+            !live_config.join("skills").exists(),
+            "Claude skills dir should be removed"
+        );
+        assert!(
+            !live_config.join("plugins").exists(),
+            "Claude plugins dir should be removed"
+        );
+    }
+
+    /// Test profile isolation with Goose-style directory naming.
+    /// Goose uses "skills" directory.
+    #[test]
+    fn switch_profile_isolation_goose_style() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("goose-isolation", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Goose uses: skills/
+        fs::write(live_config.join("config.yaml"), "GOOSE_MODE: auto").unwrap();
+        fs::create_dir_all(live_config.join("skills/my-skill")).unwrap();
+        fs::write(live_config.join("skills/my-skill/SKILL.md"), "# Skill").unwrap();
+
+        let profile_full = ProfileName::new("full").unwrap();
+        manager
+            .create_from_current(&harness, &profile_full)
+            .unwrap();
+
+        // Create empty profile
+        fs::remove_dir_all(live_config.join("skills")).unwrap();
+
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Switch full -> empty
+        manager.switch_profile(&harness, &profile_full).unwrap();
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // Harness should be clean
+        assert!(
+            !live_config.join("skills").exists(),
+            "Goose skills dir should be removed"
+        );
+
+        // Empty profile should stay empty
+        let empty_path = profiles_dir.join("goose-isolation/empty");
+        assert!(
+            !empty_path.join("skills").exists(),
+            "Empty profile should NOT have skills"
+        );
+    }
+
+    /// Comprehensive test to determine WHICH resource types are affected by the leak bug.
+    /// Tests: skills, agents, commands, plugins, and MCP config files.
+    ///
+    /// This test will show exactly which resource types leak and which don't.
+    #[test]
+    fn comprehensive_resource_leak_verification() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        let mcp_config = temp.path().join("mcp.json");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-comprehensive", live_config.clone())
+            .with_mcp(mcp_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Create "full" profile with ALL resource types
+        fs::write(live_config.join("config.json"), r#"{"profile":"full"}"#).unwrap();
+
+        // Skills
+        fs::create_dir_all(live_config.join("skills/test-skill")).unwrap();
+        fs::write(
+            live_config.join("skills/test-skill/SKILL.md"),
+            "# Test Skill",
+        )
+        .unwrap();
+
+        // Agents
+        fs::create_dir_all(live_config.join("agents/test-agent")).unwrap();
+        fs::write(
+            live_config.join("agents/test-agent/index.md"),
+            "# Test Agent",
+        )
+        .unwrap();
+
+        // Commands
+        fs::create_dir_all(live_config.join("commands/test-cmd")).unwrap();
+        fs::write(
+            live_config.join("commands/test-cmd/index.md"),
+            "# Test Command",
+        )
+        .unwrap();
+
+        // Plugins
+        fs::create_dir_all(live_config.join("plugins/test-plugin")).unwrap();
+        fs::write(
+            live_config.join("plugins/test-plugin/plugin.json"),
+            r#"{"name":"test"}"#,
+        )
+        .unwrap();
+
+        // MCP config (separate file)
+        fs::write(&mcp_config, r#"{"mcpServers":{"test-server":{}}}"#).unwrap();
+
+        let profile_full = ProfileName::new("full").unwrap();
+        manager
+            .create_from_current(&harness, &profile_full)
+            .unwrap();
+
+        // Verify full profile has everything
+        let full_path = profiles_dir.join("test-comprehensive/full");
+        assert!(full_path.join("skills").exists(), "full should have skills");
+        assert!(full_path.join("agents").exists(), "full should have agents");
+        assert!(
+            full_path.join("commands").exists(),
+            "full should have commands"
+        );
+        assert!(
+            full_path.join("plugins").exists(),
+            "full should have plugins"
+        );
+        assert!(full_path.join("mcp.json").exists(), "full should have MCP");
+
+        // Create "empty" profile with NO resources
+        for dir in ["skills", "agents", "commands", "plugins"] {
+            let _ = fs::remove_dir_all(live_config.join(dir));
+        }
+        fs::write(live_config.join("config.json"), r#"{"profile":"empty"}"#).unwrap();
+        fs::write(&mcp_config, r#"{}"#).unwrap(); // Empty MCP
+
+        let profile_empty = ProfileName::new("empty").unwrap();
+        manager
+            .create_from_current(&harness, &profile_empty)
+            .unwrap();
+
+        // Verify empty profile has nothing
+        let empty_path = profiles_dir.join("test-comprehensive/empty");
+        assert!(
+            !empty_path.join("skills").exists(),
+            "empty should NOT have skills initially"
+        );
+        assert!(
+            !empty_path.join("agents").exists(),
+            "empty should NOT have agents initially"
+        );
+        assert!(
+            !empty_path.join("commands").exists(),
+            "empty should NOT have commands initially"
+        );
+        assert!(
+            !empty_path.join("plugins").exists(),
+            "empty should NOT have plugins initially"
+        );
+
+        // Switch to full profile (loads all resources into harness dir)
+        manager.switch_profile(&harness, &profile_full).unwrap();
+
+        // Verify harness dir has all resources
+        assert!(
+            live_config.join("skills").exists(),
+            "harness should have skills after switching to full"
+        );
+        assert!(
+            live_config.join("agents").exists(),
+            "harness should have agents after switching to full"
+        );
+        assert!(
+            live_config.join("commands").exists(),
+            "harness should have commands after switching to full"
+        );
+        assert!(
+            live_config.join("plugins").exists(),
+            "harness should have plugins after switching to full"
+        );
+
+        // Switch to empty profile
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // CHECK: Which resources LEAKED (remain in harness dir)?
+        let skills_leaked = live_config.join("skills").exists();
+        let agents_leaked = live_config.join("agents").exists();
+        let commands_leaked = live_config.join("commands").exists();
+        let plugins_leaked = live_config.join("plugins").exists();
+
+        // Now switch back and forth to trigger profile contamination
+        manager.switch_profile(&harness, &profile_full).unwrap();
+        manager.switch_profile(&harness, &profile_empty).unwrap();
+
+        // CHECK: Which resources CONTAMINATED the empty profile?
+        let skills_contaminated = empty_path.join("skills").exists();
+        let agents_contaminated = empty_path.join("agents").exists();
+        let commands_contaminated = empty_path.join("commands").exists();
+        let plugins_contaminated = empty_path.join("plugins").exists();
+
+        // Report findings
+        println!("\n=== RESOURCE LEAK VERIFICATION ===");
+        println!(
+            "Skills:   leaked={:<5} contaminated={}",
+            skills_leaked, skills_contaminated
+        );
+        println!(
+            "Agents:   leaked={:<5} contaminated={}",
+            agents_leaked, agents_contaminated
+        );
+        println!(
+            "Commands: leaked={:<5} contaminated={}",
+            commands_leaked, commands_contaminated
+        );
+        println!(
+            "Plugins:  leaked={:<5} contaminated={}",
+            plugins_leaked, plugins_contaminated
+        );
+        println!("==================================\n");
+
+        // Assert NONE should leak (this will fail, proving the bug scope)
+        assert!(
+            !skills_leaked,
+            "BUG: Skills leaked to harness after switching to empty profile"
+        );
+        assert!(
+            !agents_leaked,
+            "BUG: Agents leaked to harness after switching to empty profile"
+        );
+        assert!(
+            !commands_leaked,
+            "BUG: Commands leaked to harness after switching to empty profile"
+        );
+        assert!(
+            !plugins_leaked,
+            "BUG: Plugins leaked to harness after switching to empty profile"
+        );
+
+        // Assert empty profile should NOT be contaminated
+        assert!(
+            !skills_contaminated,
+            "BUG: Skills contaminated empty profile"
+        );
+        assert!(
+            !agents_contaminated,
+            "BUG: Agents contaminated empty profile"
+        );
+        assert!(
+            !commands_contaminated,
+            "BUG: Commands contaminated empty profile"
+        );
+        assert!(
+            !plugins_contaminated,
+            "BUG: Plugins contaminated empty profile"
+        );
+    }
+
+    /// Test MCP config file leak specifically.
+    /// MCP configs are handled separately from directory resources.
+    #[test]
+    fn mcp_config_does_not_leak_between_profiles() {
+        let temp = TempDir::new().unwrap();
+        setup_test_env(&temp);
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        let mcp_config = temp.path().join("mcp.json");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness =
+            MockHarness::new("test-mcp-leak", live_config.clone()).with_mcp(mcp_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
+
+        // Profile with MCP servers
+        fs::write(live_config.join("config.json"), "{}").unwrap();
+        fs::write(
+            &mcp_config,
+            r#"{"mcpServers":{"server1":{"command":"cmd1"},"server2":{"command":"cmd2"}}}"#,
+        )
+        .unwrap();
+
+        let profile_with_mcp = ProfileName::new("with-mcp").unwrap();
+        manager
+            .create_from_current(&harness, &profile_with_mcp)
+            .unwrap();
+
+        // Profile without MCP servers
+        fs::write(&mcp_config, r#"{}"#).unwrap();
+
+        let profile_no_mcp = ProfileName::new("no-mcp").unwrap();
+        manager
+            .create_from_current(&harness, &profile_no_mcp)
+            .unwrap();
+
+        // Switch to profile with MCP
+        manager.switch_profile(&harness, &profile_with_mcp).unwrap();
+        let mcp_content = fs::read_to_string(&mcp_config).unwrap();
+        assert!(
+            mcp_content.contains("server1"),
+            "MCP should have servers after switching to with-mcp"
+        );
+
+        // Switch to profile without MCP
+        manager.switch_profile(&harness, &profile_no_mcp).unwrap();
+        let mcp_content = fs::read_to_string(&mcp_config).unwrap();
+
+        // MCP config should be empty/minimal after switching to no-mcp profile
+        assert!(
+            !mcp_content.contains("server1"),
+            "BUG: MCP servers leaked - server1 should not exist after switching to no-mcp profile"
+        );
+        assert!(
+            !mcp_content.contains("server2"),
+            "BUG: MCP servers leaked - server2 should not exist after switching to no-mcp profile"
+        );
     }
 }

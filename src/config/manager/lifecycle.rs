@@ -108,21 +108,34 @@ impl ProfileManager {
         }
 
         let harness_id = harness.id();
-        if let Ok(config) = BridleConfig::load()
+        let saved_to_profile = if let Ok(config) = BridleConfig::load()
             && let Some(active_name) = config.active_profile_for(harness_id)
             && let Ok(active_profile) = ProfileName::new(active_name)
             && active_profile.as_str() != name.as_str()
         {
-            let _ = self.save_to_profile(harness, harness_for_resources, &active_profile);
-        }
+            self.save_to_profile(harness, harness_for_resources, &active_profile)?;
+            true
+        } else {
+            false
+        };
 
         let target_dir = harness.config_dir()?;
+
+        // If no active profile was saved, backup current state to "no-profile" folder
+        // This preserves unknown files when switching for the first time
+        if !saved_to_profile && target_dir.exists() {
+            let no_profile_backup = self.backups_dir().join(harness.id()).join("no-profile");
+            let _ = std::fs::remove_dir_all(&no_profile_backup);
+            std::fs::create_dir_all(&no_profile_backup)?;
+            files::copy_all_contents(&target_dir, &no_profile_backup)?;
+        }
 
         if !target_dir.exists() {
             std::fs::create_dir_all(&target_dir)?;
         }
 
-        files::copy_all_contents(&profile_path, &target_dir)?;
+        let backup_dir = self.backups_dir().join(harness.id());
+        files::switch_config_dir_safely(&profile_path, &target_dir, &backup_dir)?;
 
         if let Some(mcp_path) = harness.mcp_config_path()
             && let Some(filename) = mcp_path.file_name()
