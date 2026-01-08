@@ -40,6 +40,9 @@ impl ProfileManager {
         std::fs::create_dir_all(&backup_path)?;
         files::copy_config_files(harness, true, &backup_path)?;
 
+        let extra_dir = self.backups_dir().join(harness.id()).join("extra");
+        let _ = files::backup_session_data(&source_dir, &extra_dir);
+
         Ok(backup_path)
     }
 

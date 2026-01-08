@@ -193,7 +193,6 @@ impl App {
     }
 
     fn refresh_profiles(&mut self) {
-        self.sync_active_profiles();
         self.profiles.clear();
         self.profile_state.select(None);
         self.profile_table_state.select(None);
@@ -494,11 +493,6 @@ impl App {
             return;
         };
 
-        if let Err(e) = self.manager.backup_current(&harness) {
-            self.status_message = Some(format!("Backup failed: {}", e));
-            return;
-        }
-
         match self
             .manager
             .switch_profile_with_resources(&harness, Some(&harness), &profile_name)
@@ -617,8 +611,9 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
+                self.sync_active_profiles();
                 self.refresh_profiles();
-                self.status_message = Some("Refreshed".to_string());
+                self.status_message = Some("Synced and refreshed".to_string());
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingProfile;
@@ -1205,7 +1200,15 @@ pub fn run() -> Result<(), Error> {
         if event::poll(std::time::Duration::from_millis(100)).map_err(Error::Io)? {
             match event::read().map_err(Error::Io)? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    app.handle_key(key.code);
+                    let is_ctrl_c = key.code == KeyCode::Char('c')
+                        && key
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL);
+                    if is_ctrl_c {
+                        app.running = false;
+                    } else {
+                        app.handle_key(key.code);
+                    }
                 }
                 Event::Mouse(mouse) => {
                     app.handle_mouse(mouse);
@@ -1215,6 +1218,7 @@ pub fn run() -> Result<(), Error> {
         }
     }
 
+    app.sync_active_profiles();
     restore_terminal(&mut terminal).map_err(Error::Io)?;
     Ok(())
 }

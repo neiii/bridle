@@ -7,14 +7,33 @@ use crate::error::Result;
 use crate::harness::HarnessConfig;
 use crate::install::installer::{sanitize_name_for_opencode, transform_skill_for_opencode};
 
-/// Directories to skip when copying profiles
-const EXCLUDED_DIRS: &[&str] = &[
+const ALWAYS_EXCLUDED: &[&str] = &[
     ".git",
     ".DS_Store",
     "Thumbs.db",
     "__pycache__",
     "node_modules",
 ];
+
+const SESSION_DATA: &[&str] = &[
+    "transcripts",
+    "debug",
+    "statsig",
+    "projects",
+    "todos",
+    "shell-snapshots",
+    "history.jsonl",
+];
+
+fn is_excluded(name: &str) -> bool {
+    ALWAYS_EXCLUDED.contains(&name) || SESSION_DATA.contains(&name)
+}
+
+fn is_session_data(name: &str) -> bool {
+    SESSION_DATA.contains(&name)
+}
+
+const MAX_EXTRA_BACKUPS: usize = 5;
 
 pub fn copy_config_files(
     harness: &dyn HarnessConfig,
@@ -30,8 +49,15 @@ pub fn copy_config_files(
         if config_dir.exists() {
             for entry in std::fs::read_dir(&config_dir)? {
                 let entry = entry?;
+                let file_name = entry.file_name();
+                let name_str = file_name.to_string_lossy();
+
+                if is_excluded(&name_str) {
+                    continue;
+                }
+
                 let file_type = entry.file_type()?;
-                let dest = profile_path.join(entry.file_name());
+                let dest = profile_path.join(&file_name);
 
                 if file_type.is_file() {
                     std::fs::copy(entry.path(), &dest)?;
@@ -97,8 +123,15 @@ pub fn copy_all_contents(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+
+        if is_excluded(&name_str) {
+            continue;
+        }
+
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let dst_path = dst.join(&file_name);
         if entry.file_type()?.is_dir() {
             copy_dir_filtered(&src_path, &dst_path)?;
         } else {
@@ -106,6 +139,66 @@ pub fn copy_all_contents(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn backup_session_data(config_dir: &Path, extra_dir: &Path) -> Result<()> {
+    if !config_dir.exists() {
+        return Ok(());
+    }
+
+    let has_session_data = std::fs::read_dir(config_dir)?
+        .filter_map(|e| e.ok())
+        .any(|e| is_session_data(&e.file_name().to_string_lossy()));
+
+    if !has_session_data {
+        return Ok(());
+    }
+
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let backup_path = extra_dir.join(&timestamp);
+    std::fs::create_dir_all(&backup_path)?;
+
+    for entry in std::fs::read_dir(config_dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+
+        if !is_session_data(&name_str) {
+            continue;
+        }
+
+        let src_path = entry.path();
+        let dst_path = backup_path.join(&file_name);
+
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    rotate_extra_backups(extra_dir, MAX_EXTRA_BACKUPS);
+    Ok(())
+}
+
+fn rotate_extra_backups(extra_dir: &Path, max_keep: usize) {
+    let Ok(entries) = std::fs::read_dir(extra_dir) else {
+        return;
+    };
+
+    let mut backups: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+
+    backups.sort();
+
+    if backups.len() > max_keep {
+        for old_backup in backups.iter().take(backups.len() - max_keep) {
+            let _ = std::fs::remove_dir_all(old_backup);
+        }
+    }
 }
 
 /// Safely switches harness config directory to match profile contents.
@@ -133,7 +226,6 @@ pub fn switch_config_dir_safely(
     let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
     let backup_path = backup_dir.join(format!("{}_{}", timestamp, std::process::id()));
 
-    // Backup current config_dir contents
     let has_backup = if config_dir.exists() && std::fs::read_dir(config_dir)?.next().is_some() {
         std::fs::create_dir_all(&backup_path)?;
         copy_all_contents(config_dir, &backup_path)?;
@@ -142,10 +234,16 @@ pub fn switch_config_dir_safely(
         false
     };
 
-    // Wipe config_dir contents (symlink-safe using file_type)
     if config_dir.exists() {
         for entry in std::fs::read_dir(config_dir)? {
             let entry = entry?;
+            let file_name = entry.file_name();
+            let name_str = file_name.to_string_lossy();
+
+            if is_session_data(&name_str) {
+                continue;
+            }
+
             let path = entry.path();
             let file_type = entry.file_type()?;
             if file_type.is_dir() {
@@ -240,7 +338,7 @@ pub fn copy_dir_filtered(src: &Path, dst: &Path) -> Result<()> {
         let file_name = entry.file_name();
         let name_str = file_name.to_string_lossy();
 
-        if EXCLUDED_DIRS.iter().any(|&ex| name_str == ex) {
+        if is_excluded(&name_str) {
             continue;
         }
 
