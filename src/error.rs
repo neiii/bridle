@@ -39,7 +39,7 @@ pub enum Error {
     InvalidProfileName(String),
 
     /// Unknown harness name.
-    #[error("unknown harness: {0}\nValid options: claude-code, opencode, goose, amp-code")]
+    #[error("unknown harness: {0}\nValid options: claude-code, opencode, goose, amp-code, crush")]
     UnknownHarness(String),
 
     /// Command failed.

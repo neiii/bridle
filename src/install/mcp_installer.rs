@@ -41,6 +41,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "opencode" | "oc" => Some(HarnessKind::OpenCode),
         "goose" => Some(HarnessKind::Goose),
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
+        "crush" => Some(HarnessKind::Crush),
         _ => None,
     }
 }
@@ -51,6 +52,7 @@ fn get_profile_config_path(profile_dir: &Path, harness_kind: HarnessKind) -> Pat
         HarnessKind::OpenCode => profile_dir.join("opencode.jsonc"),
         HarnessKind::Goose => profile_dir.join("config.yaml"),
         HarnessKind::AmpCode => profile_dir.join("settings.json"),
+        HarnessKind::Crush => profile_dir.join("crush.json"),
         _ => profile_dir.join("config.json"),
     }
 }
@@ -330,6 +332,34 @@ mod tests {
                     .to_string_lossy()
                     .contains("settings.json")
             );
+        }
+    }
+
+    #[test]
+    fn install_mcp_to_crush_profile() {
+        let (_temp, target, profiles_dir) = setup_test_env("crush");
+        let server = create_stdio_server();
+
+        let result = install_mcp_to_dir(
+            "filesystem",
+            &server,
+            &target,
+            &InstallOptions::default(),
+            &profiles_dir,
+        );
+        assert!(result.is_ok());
+
+        if let Ok(McpInstallOutcome::Installed(success)) = result {
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("crush.json")
+            );
+
+            let content = fs::read_to_string(&success.profile_path).unwrap();
+            assert!(content.contains("\"mcp\""));
+            assert!(content.contains("filesystem"));
         }
     }
 

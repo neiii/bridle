@@ -63,7 +63,7 @@ fn opencode_jsonc_can_be_read_and_written() {
       "command": "existing-cmd"
     }
   }
-}"#,
+ }"#,
     );
 
     let config_path = temp.path().join("opencode.jsonc");
@@ -73,6 +73,43 @@ fn opencode_jsonc_can_be_read_and_written() {
     assert!(content.contains("existing"));
     assert!(content.contains("mcp"));
     assert!(content.contains("// OpenCode configuration"));
+}
+
+#[test]
+fn crush_json_can_be_read_and_written() {
+    let temp = setup_config_dir(
+        "crush.json",
+        r#"{
+  "$schema": "https://charm.land/crush.json",
+  "model": "gpt-4",
+  "mcp": {
+    "existing": {
+      "type": "stdio",
+      "command": "existing-cmd",
+      "args": []
+    }
+  }
+}"#,
+    );
+
+    let config_path = temp.path().join("crush.json");
+    let content = fs::read_to_string(&config_path).unwrap();
+
+    assert!(content.contains("existing"));
+    assert!(content.contains("\"mcp\""));
+
+    let mut config: serde_json::Value = serde_json::from_str(&content).unwrap();
+    config["mcp"]["new-mcp"] = serde_json::json!({
+        "type": "stdio",
+        "command": "new-cmd",
+        "args": ["--arg1"]
+    });
+    fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+    let updated = fs::read_to_string(&config_path).unwrap();
+    assert!(updated.contains("existing"));
+    assert!(updated.contains("new-mcp"));
+    assert!(updated.contains("new-cmd"));
 }
 
 #[test]

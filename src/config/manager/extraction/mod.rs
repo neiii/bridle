@@ -291,6 +291,7 @@ pub fn extract_model(harness: &dyn HarnessConfig, profile_path: &Path) -> Option
         "claude-code" => extract_model_claude_code(profile_path),
         "goose" => extract_model_goose(profile_path),
         "amp-code" => extract_model_ampcode(profile_path),
+        "crush" => extract_model_crush(profile_path),
         _ => None,
     }
 }
@@ -349,6 +350,31 @@ fn extract_model_ampcode(profile_path: &Path) -> Option<String> {
         .get("amp")
         .and_then(|amp| amp.get("model"))
         .and_then(|m| m.as_str())
+        .map(String::from)
+}
+
+fn extract_model_crush(profile_path: &Path) -> Option<String> {
+    let config_path = profile_path.join("crush.json");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    parsed
+        .get("model")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            parsed
+                .get("models")
+                .and_then(|m| m.get("large"))
+                .and_then(|m| m.get("model"))
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| {
+            parsed
+                .get("models")
+                .and_then(|m| m.get("small"))
+                .and_then(|m| m.get("model"))
+                .and_then(|v| v.as_str())
+        })
         .map(String::from)
 }
 

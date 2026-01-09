@@ -82,6 +82,75 @@ fn profile_create_and_show() {
 }
 
 #[test]
+fn crush_profile_show_includes_model() {
+    use std::fs;
+
+    let (mut cmd, temp) = with_isolated_config();
+
+    cmd.args(["profile", "create", "crush", "model-test"])
+        .assert()
+        .success();
+
+    let crush_profile_dir = temp.path().join("profiles/crush/model-test");
+    fs::write(
+        crush_profile_dir.join("crush.json"),
+        r#"{
+  "$schema": "https://charm.land/crush.json",
+  "model": "gpt-4",
+  "mcp": {}
+}"#,
+    )
+    .unwrap();
+
+    let mut cmd2 = bridle();
+    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    cmd2.args(["profile", "show", "crush", "model-test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Model: gpt-4"));
+}
+
+#[test]
+fn crush_profile_create_from_current_copies_crush_json() {
+    use std::fs;
+
+    let temp = TempDir::new().unwrap();
+    let bridle_config = temp.path().join("bridle");
+    let home_dir = temp.path().join("home");
+    let crush_config = home_dir.join(".config/crush");
+
+    fs::create_dir_all(&crush_config).unwrap();
+    fs::write(
+        crush_config.join("crush.json"),
+        r#"{
+  "$schema": "https://charm.land/crush.json",
+  "model": "gpt-4",
+  "mcp": {}
+}"#,
+    )
+    .unwrap();
+
+    let mut cmd = bridle();
+    cmd.env("BRIDLE_CONFIG_DIR", &bridle_config);
+    cmd.env("HOME", &home_dir);
+    cmd.env_remove("XDG_CONFIG_HOME");
+    cmd.args([
+        "profile",
+        "create",
+        "crush",
+        "from-current",
+        "--from-current",
+    ])
+    .assert()
+    .success();
+
+    let profile_crush_json = bridle_config.join("profiles/crush/from-current/crush.json");
+    assert!(profile_crush_json.exists());
+    let content = fs::read_to_string(profile_crush_json).unwrap();
+    assert!(content.contains("\"model\": \"gpt-4\""));
+}
+
+#[test]
 fn profile_create_and_delete() {
     let (mut cmd, temp) = with_isolated_config();
 

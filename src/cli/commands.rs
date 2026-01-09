@@ -32,7 +32,7 @@ pub enum Commands {
 
     /// Uninstall components from a profile.
     Uninstall {
-        /// Harness name (claude-code, opencode, goose).
+        /// Harness name (claude-code, opencode, goose, amp-code, crush).
         harness: String,
         /// Profile name.
         profile: String,
@@ -60,7 +60,7 @@ pub enum ConfigCommands {
 pub enum ProfileCommands {
     /// List profiles for a harness.
     List {
-        /// Harness name (claude-code, opencode, goose).
+        /// Harness name (claude-code, opencode, goose, amp-code, crush).
         harness: String,
     },
 
