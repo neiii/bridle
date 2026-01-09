@@ -291,8 +291,27 @@ mod tests {
         DirectoryStructure, extract_resource_summary, list_files_matching, list_subdirs_with_file,
     };
     use super::*;
+    use std::ffi::OsString;
     use std::fs;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    struct TestEnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        prev: Option<OsString>,
+    }
+
+    impl Drop for TestEnvGuard {
+        fn drop(&mut self) {
+            if let Some(prev) = &self.prev {
+                unsafe { std::env::set_var("BRIDLE_CONFIG_DIR", prev) };
+            } else {
+                unsafe { std::env::remove_var("BRIDLE_CONFIG_DIR") };
+            }
+        }
+    }
 
     struct MockHarness {
         id: String,
@@ -348,17 +367,21 @@ mod tests {
         }
     }
 
-    fn setup_test_env(temp: &TempDir) {
+    fn setup_test_env(temp: &TempDir) -> TestEnvGuard {
+        let lock = TEST_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+        let prev = std::env::var_os("BRIDLE_CONFIG_DIR");
         let bridle_config_dir = temp.path().join("bridle_config");
         fs::create_dir_all(&bridle_config_dir).unwrap();
-        // SAFETY: Tests run single-threaded (--test-threads=1), no concurrent env access
         unsafe { std::env::set_var("BRIDLE_CONFIG_DIR", &bridle_config_dir) };
+
+        TestEnvGuard { _lock: lock, prev }
     }
 
     #[test]
     fn switch_profile_preserves_edits() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -431,7 +454,7 @@ mod tests {
     #[test]
     fn switch_profile_restores_mcp_config() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         let mcp_file = temp.path().join(".mcp.json");
@@ -468,7 +491,7 @@ mod tests {
     #[test]
     fn switch_preserves_unknown_files() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -592,7 +615,7 @@ mod tests {
     #[test]
     fn switch_saves_new_directories_to_old_profile() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -629,7 +652,7 @@ mod tests {
     #[test]
     fn deep_nesting_survives_multiple_round_trips() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -676,7 +699,7 @@ mod tests {
     #[test]
     fn wide_directory_structure_preserved() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -799,7 +822,7 @@ mod tests {
     #[test]
     fn switch_profile_does_not_leak_skills_to_other_profiles() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -868,7 +891,7 @@ mod tests {
     #[test]
     fn switch_to_empty_profile_clears_harness_resources() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -926,7 +949,7 @@ mod tests {
     #[test]
     fn switch_profile_does_not_leak_agents() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -984,7 +1007,7 @@ mod tests {
     #[test]
     fn switch_profile_does_not_leak_commands() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -1038,7 +1061,7 @@ mod tests {
     #[test]
     fn switch_profile_does_not_leak_multiple_resource_types() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -1123,7 +1146,7 @@ mod tests {
     #[test]
     fn switch_profile_isolation_opencode_style() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -1180,7 +1203,7 @@ mod tests {
     #[test]
     fn switch_profile_isolation_claude_style() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -1233,7 +1256,7 @@ mod tests {
     #[test]
     fn switch_profile_isolation_goose_style() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
@@ -1284,7 +1307,7 @@ mod tests {
     #[test]
     fn comprehensive_resource_leak_verification() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         let mcp_config = temp.path().join("mcp.json");
@@ -1484,7 +1507,7 @@ mod tests {
     #[test]
     fn mcp_config_does_not_leak_between_profiles() {
         let temp = TempDir::new().unwrap();
-        setup_test_env(&temp);
+        let _env = setup_test_env(&temp);
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         let mcp_config = temp.path().join("mcp.json");
