@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = "0.3.1"
-skills-locate = "0.2.1"
+harness-locate = { git = "https://github.com/edlsh/harness-barn", branch = "feat/add-crush-harness" }
+skills-locate = { git = "https://github.com/edlsh/harness-barn", branch = "feat/add-crush-harness" }
 
 
 # CLI
