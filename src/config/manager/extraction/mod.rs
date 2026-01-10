@@ -54,12 +54,58 @@ pub fn extract_mcp_from_opencode_config(profile_path: &Path) -> Result<Vec<McpSe
     Ok(servers)
 }
 
+fn extract_mcp_from_crush_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
+    let config_path = profile_path.join("crush.json");
+    if !config_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| Error::Config(format!("Failed to read crush.json: {}", e)))?;
+
+    let config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| Error::Config(format!("Failed to parse crush.json: {}", e)))?;
+
+    let mcp_obj = match config.get("mcp").and_then(|v| v.as_object()) {
+        Some(obj) => obj,
+        None => return Ok(Vec::new()),
+    };
+
+    let servers = mcp_obj
+        .iter()
+        .map(|(name, value)| {
+            let server_type = value.get("type").and_then(|v| v.as_str()).map(String::from);
+            let command = value
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let args = value.get("args").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.as_str().map(String::from))
+                    .collect()
+            });
+            let url = value.get("url").and_then(|v| v.as_str()).map(String::from);
+            McpServerInfo {
+                name: name.clone(),
+                enabled: true,
+                server_type,
+                command,
+                args,
+                url,
+            }
+        })
+        .collect();
+
+    Ok(servers)
+}
+
 pub fn extract_mcp_servers(
     harness: &dyn HarnessConfig,
     profile_path: &Path,
 ) -> Result<Vec<McpServerInfo>> {
     match harness.id() {
         "opencode" => extract_mcp_from_opencode_config(profile_path),
+        "crush" => extract_mcp_from_crush_config(profile_path),
         "amp-code" => extract_mcp_from_ampcode_config(profile_path),
         "claude-code" => extract_mcp_from_claudecode_config(profile_path),
         "goose" => extract_mcp_from_goose_config(profile_path),
