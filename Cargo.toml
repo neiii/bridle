@@ -1,6 +1,6 @@
 [package]
 name = "bridle"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license = "MIT"
@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
-skills-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
+harness-locate = "0.4"
+skills-locate = "0.2"
 
 
 # CLI
