@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Switch from git dependencies to versioned crates (`harness-locate 0.4`, `skills-locate 0.2`)
+- Switch from git dependencies to versioned crates (`harness-locate 0.4.1`, `skills-locate 0.2.2`)
   - Enables `cargo install bridle` and crates.io publishing
   - Improves build reproducibility
 
