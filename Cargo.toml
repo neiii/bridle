@@ -53,4 +53,3 @@ predicates = "3.1"
 [profile.dist]
 inherits = "release"
 lto = "thin"
-

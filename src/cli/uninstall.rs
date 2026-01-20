@@ -116,4 +116,36 @@ fn list_installed_components(profile_path: &Path) -> Result<Vec<(String, Compone
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn resolve_harness_canonicalizes_copilot_alias() {
+        let harness = resolve_harness("copilot").unwrap();
+        assert_eq!(harness.id(), "copilot-cli");
+    }
+
+    #[test]
+    fn resolve_harness_accepts_canonical_copilot() {
+        let harness = resolve_harness("copilot-cli").unwrap();
+        assert_eq!(harness.id(), "copilot-cli");
+    }
+
+    #[test]
+    fn profile_path_uses_canonical_harness_id() {
+        let temp = TempDir::new().unwrap();
+        let profiles_dir = temp.path();
+
+        let canonical_dir = profiles_dir.join("copilot-cli").join("test");
+        std::fs::create_dir_all(&canonical_dir).unwrap();
+
+        let harness = resolve_harness("copilot").unwrap();
+        let harness_id = harness.id();
+
+        let profile_path = profiles_dir.join(harness_id).join("test");
+
+        assert_eq!(profile_path, canonical_dir);
+        assert!(profile_path.exists());
+    }
+}

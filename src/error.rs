@@ -40,7 +40,7 @@ pub enum Error {
 
     /// Unknown harness name.
     #[error(
-        "unknown harness: {0}\nValid options: claude-code, opencode, goose, amp-code, crush, copilot-cli"
+        "unknown harness: {0}\nValid options: claude-code, opencode, goose, amp-code, copilot-cli, crush"
     )]
     UnknownHarness(String),
 

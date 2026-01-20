@@ -6,17 +6,10 @@ pub fn get_install_instructions(kind: HarnessKind) -> Vec<String> {
         HarnessKind::OpenCode => opencode_instructions(),
         HarnessKind::Goose => goose_instructions(),
         HarnessKind::AmpCode => amp_instructions(),
-        HarnessKind::Crush => crush_instructions(),
         HarnessKind::CopilotCli => copilot_cli_instructions(),
+        HarnessKind::Crush => crush_instructions(),
         _ => vec!["Unknown harness".to_string()],
     }
-}
-
-fn crush_instructions() -> Vec<String> {
-    vec![
-        "- Visit https://charm.sh/crush for installation instructions".to_string(),
-        "- brew install charmbracelet/tap/crush".to_string(),
-    ]
 }
 
 fn copilot_cli_instructions() -> Vec<String> {
@@ -38,6 +31,13 @@ fn copilot_cli_instructions() -> Vec<String> {
             "- curl -fsSL https://gh.io/copilot-install | bash".to_string(),
         ]
     }
+}
+
+fn crush_instructions() -> Vec<String> {
+    vec![
+        "- Visit https://charm.sh/crush for installation instructions".to_string(),
+        "- brew install charmbracelet/tap/crush".to_string(),
+    ]
 }
 
 fn claude_code_instructions() -> Vec<String> {
@@ -132,8 +132,8 @@ pub fn get_empty_state_message(
         HarnessKind::OpenCode => "OpenCode",
         HarnessKind::Goose => "Goose",
         HarnessKind::AmpCode => "AMP Code",
-        HarnessKind::Crush => "Crush",
         HarnessKind::CopilotCli => "Copilot CLI",
+        HarnessKind::Crush => "Crush",
         _ => "Unknown",
     };
 
@@ -180,8 +180,8 @@ pub fn get_empty_state_message(
                 HarnessKind::OpenCode => "opencode",
                 HarnessKind::Goose => "goose",
                 HarnessKind::AmpCode => "amp",
-                HarnessKind::Crush => "crush",
                 HarnessKind::CopilotCli => "copilot",
+                HarnessKind::Crush => "crush",
                 _ => "<unknown>",
             };
 

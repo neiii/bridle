@@ -2,7 +2,7 @@
 
 # Bridle
 
-Unified configuration manager for AI coding assistants. Manage profiles, install skills/agents/commands, and switch configurations across Claude Code, OpenCode, Goose, Amp, and Crush.
+Unified configuration manager for AI coding assistants. Manage profiles, install skills/agents/commands, and switch configurations across Claude Code, OpenCode, Goose, Amp, Copilot CLI, and Crush.
 
 > [!WARNING]
 > If you're on a version before 0.2.2, please update immediately. Older versions had a critical bug that could cause data loss during profile switches.
@@ -55,16 +55,16 @@ bridle install owner/repo
 
 **Why this matters:** A skill written for Claude Code uses `~/.claude/skills/`. The same skill on OpenCode lives at `~/.config/opencode/skill/`. MCPs follow different JSON/YAML schemas. Bridle handles all these differences for you.
 
-| Component | Claude Code | OpenCode | Goose | Crush |
-| --------- | ----------- | -------- | ----- | ----- |
-| Skills    | `~/.claude/skills/` | `~/.config/opencode/skill/` | `~/.config/goose/skills/` | `~/.config/crush/skills/` |
-| Agents    | `~/.claude/plugins/*/agents/` | `~/.config/opencode/agent/` | — | — |
-| Commands  | `~/.claude/plugins/*/commands/` | `~/.config/opencode/command/` | — | — |
-| MCPs      | `~/.claude/.mcp.json` | `opencode.jsonc` | `config.yaml` | `crush.json` |
+| Component | Claude Code | OpenCode | Goose | Copilot CLI | Crush |
+| --------- | ----------- | -------- | ----- | ----------- | ----- |
+| Skills    | `~/.claude/skills/` | `~/.config/opencode/skill/` | `~/.config/goose/skills/` | `~/.copilot/skills/` | `~/.config/crush/skills/` |
+| Agents    | `~/.claude/plugins/*/agents/` | `~/.config/opencode/agent/` | — | `~/.copilot/agents/` | — |
+| Commands  | `~/.claude/plugins/*/commands/` | `~/.config/opencode/command/` | — | — | — |
+| MCPs      | `~/.claude/.mcp.json` | `opencode.jsonc` | `config.yaml` | `~/.copilot/mcp-config.json` | `crush.json` |
 
 ## Core Concepts
 
-**Harnesses** are AI coding assistants: `claude`, `opencode`, `goose`, `amp`, `crush`
+**Harnesses** are AI coding assistants: `claude`, `opencode`, `goose`, `amp`, `copilot`, `crush`
 
 **Profiles** are saved configurations. Each harness can have multiple profiles (e.g., `work`, `personal`, `minimal`). Bridle copies the active profile's config into the harness's config directory when you switch.
 
@@ -139,6 +139,7 @@ view = "Dashboard"      # Will add more later :P
 | OpenCode    | `~/.config/opencode/`   | Full support |
 | Goose       | `~/.config/goose/`      | Full support |
 | Amp         | `~/.amp/`               | Experimental (ish) |
+| Copilot CLI | `~/.copilot/`           | Full support |
 | Crush       | `~/.config/crush/`      | Full support (skills + MCP) |
 
 ## Honorable Mentions
