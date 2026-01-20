@@ -68,9 +68,35 @@ Keep them concise and descriptive:
 src/
 ├── cli/        # CLI commands and output
 ├── config/     # Configuration management
-├── harness/    # Harness definitions (claude, opencode, goose, amp)
+├── harness/    # Harness definitions (claude, opencode, goose, amp, copilot)
 ├── install/    # Skill discovery and installation
 └── tui/        # Terminal UI
+```
+
+## Publishing & Releases
+
+Release automation is handled by [cargo-dist](https://github.com/axodotdev/cargo-dist) and requires the following GitHub Actions secrets:
+
+| Secret | Purpose |
+|--------|---------|
+| `HOMEBREW_TAP_TOKEN` | GitHub PAT with write access to `neiii/homebrew-bridle` for Homebrew formula publishing |
+| `NPM_TOKEN` | npm access token for publishing `bridle-ai` to npm registry |
+| `DISCORD_TEST_WEBHOOK` | Discord webhook for test release notifications |
+| `DISCORD_RELEASE_WEBHOOK` | Discord webhook for release notifications |
+
+### Setting up NPM_TOKEN
+
+1. Go to [npmjs.com](https://www.npmjs.com/) → Access Tokens → Generate New Token
+2. Select **Granular Access Token**
+3. Set permissions: **Packages and scopes** → **Read and write**
+4. Select packages: **All packages** (required for first publish; can narrow after)
+5. Add as GitHub repo secret named `NPM_TOKEN`
+
+### Preflight checks before first npm release
+
+```bash
+npm whoami                    # Confirm you're logged in
+npm view bridle-ai            # Should return 404 (not taken)
 ```
 
 ## Response Times

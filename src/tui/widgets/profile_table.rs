@@ -2,9 +2,10 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, TableState, Widget},
 };
 
+use super::EmptyState;
 use crate::config::ProfileInfo;
 
 pub struct ProfileTable<'a> {
@@ -57,15 +58,13 @@ impl StatefulWidget for ProfileTable<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         if self.profiles.is_empty() {
-            let empty_msg = "No profiles found. Create one with 'n' or run 'bridle profile create'";
-            let x = area.x + area.width.saturating_sub(empty_msg.len() as u16) / 2;
-            let y = area.y + area.height / 2;
-            buf.set_string(
-                x,
-                y,
-                empty_msg,
-                Style::default().add_modifier(Modifier::DIM),
-            );
+            let lines = vec![
+                "No profiles found".to_string(),
+                String::new(),
+                "Press 'n' to create a profile".to_string(),
+            ];
+            let widget = EmptyState::new("Profiles", lines).focused(self.focused);
+            widget.render(area, buf);
             return;
         }
 

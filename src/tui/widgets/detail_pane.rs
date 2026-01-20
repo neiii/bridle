@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
+use super::EmptyState;
 use crate::config::ProfileInfo;
 
 pub fn render_profile_details(profile: &ProfileInfo) -> Vec<Line<'static>> {
@@ -41,28 +42,35 @@ impl<'a> DetailPane<'a> {
 
 impl Widget for DetailPane<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let border_style = if self.is_focused {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+        match self.profile {
+            None => {
+                let lines = vec![
+                    "Select a profile to view details".to_string(),
+                    String::new(),
+                    "Tab to focus Profiles".to_string(),
+                ];
+                let widget = EmptyState::new("Details", lines).focused(self.is_focused);
+                widget.render(area, buf);
+            }
+            Some(profile) => {
+                let border_style = if self.is_focused {
+                    Style::default().fg(Color::Cyan)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
 
-        let block = Block::default()
-            .title(" Details ")
-            .borders(Borders::ALL)
-            .border_style(border_style);
+                let block = Block::default()
+                    .title(" Details ")
+                    .borders(Borders::ALL)
+                    .border_style(border_style);
 
-        let content = match self.profile {
-            Some(profile) => render_profile_details(profile),
-            None => vec![Line::styled(
-                "Select a profile to view details",
-                Style::default().fg(Color::DarkGray),
-            )],
-        };
+                let content = render_profile_details(profile);
 
-        Paragraph::new(content)
-            .block(block)
-            .scroll((self.scroll_offset, 0))
-            .render(area, buf);
+                Paragraph::new(content)
+                    .block(block)
+                    .scroll((self.scroll_offset, 0))
+                    .render(area, buf);
+            }
+        }
     }
 }

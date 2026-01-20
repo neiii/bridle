@@ -6,6 +6,7 @@
 #![allow(unused_imports)]
 
 mod display;
+mod install_instructions;
 
 use std::path::PathBuf;
 
@@ -14,6 +15,7 @@ use harness_locate::{InstallationStatus, McpServer, Scope};
 use crate::error::Result;
 
 pub use display::DisplayInfo;
+pub use install_instructions::{get_empty_state_message, get_install_instructions};
 
 /// Configuration interface for AI coding assistant harnesses.
 ///

@@ -1,4 +1,4 @@
-use harness_locate::{Harness, HarnessKind};
+use harness_locate::{Harness, HarnessKind, InstallationStatus};
 use serde::Serialize;
 
 use crate::cli::output::{ResolvedFormat, output, output_list};
@@ -14,7 +14,7 @@ struct ProfileListEntry {
     is_active: bool,
 }
 
-fn resolve_harness(name: &str) -> Result<Harness> {
+pub(crate) fn resolve_harness(name: &str) -> Result<Harness> {
     let kind = match name {
         "claude-code" | "claude" | "cc" => HarnessKind::ClaudeCode,
         "opencode" | "oc" => HarnessKind::OpenCode,
@@ -99,6 +99,22 @@ fn print_profile_text(info: &crate::config::ProfileInfo, harness: &harness_locat
 
 pub fn create_profile(harness_name: &str, profile_name: &str) -> Result<()> {
     let harness = resolve_harness(harness_name)?;
+
+    let status = harness
+        .installation_status()
+        .unwrap_or(InstallationStatus::NotInstalled);
+    match status {
+        InstallationStatus::FullyInstalled { .. } => {}
+        _ => {
+            eprintln!("Harness is not installed/configured:\n");
+            let lines = crate::harness::get_empty_state_message(harness.kind(), status, false);
+            for line in lines {
+                eprintln!("{}", line);
+            }
+            return Err(Error::HarnessNotInstalled);
+        }
+    }
+
     let name = ProfileName::new(profile_name)
         .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
     let manager = get_manager()?;
@@ -111,6 +127,22 @@ pub fn create_profile(harness_name: &str, profile_name: &str) -> Result<()> {
 
 pub fn create_profile_from_current(harness_name: &str, profile_name: &str) -> Result<()> {
     let harness = resolve_harness(harness_name)?;
+
+    let status = harness
+        .installation_status()
+        .unwrap_or(InstallationStatus::NotInstalled);
+    match status {
+        InstallationStatus::FullyInstalled { .. } => {}
+        _ => {
+            eprintln!("Harness is not installed/configured:\n");
+            let lines = crate::harness::get_empty_state_message(harness.kind(), status, false);
+            for line in lines {
+                eprintln!("{}", line);
+            }
+            return Err(Error::HarnessNotInstalled);
+        }
+    }
+
     let name = ProfileName::new(profile_name)
         .map_err(|_| Error::InvalidProfileName(profile_name.to_string()))?;
     let manager = get_manager()?;

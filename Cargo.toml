@@ -1,6 +1,6 @@
 [package]
 name = "bridle"
-version = "0.2.5"
+version = "0.2.7"
 edition = "2024"
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license = "MIT"
@@ -33,6 +33,7 @@ color-eyre = "0.6"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
+textwrap = "0.16"
 
 # TUI
 ratatui = "0.29"
@@ -52,5 +53,4 @@ predicates = "3.1"
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
 

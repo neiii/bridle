@@ -23,7 +23,7 @@ impl HarnessStatus {
             Self::Active => '●',
             Self::Installed => '+',
             Self::BinaryOnly => '-',
-            Self::NotInstalled => ' ',
+            Self::NotInstalled => '○',
         }
     }
 
@@ -106,7 +106,7 @@ impl Widget for HarnessTabs<'_> {
             .highlight_style(
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                    .add_modifier(Modifier::BOLD),
             )
             .divider(Span::raw(" │ "));
 

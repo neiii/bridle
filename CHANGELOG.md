@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-01-16
+
+### Added
+
+- **Copilot CLI harness support** - Full support for GitHub Copilot CLI as a new harness (#15)
+  - Profile management (create, switch, show, delete)
+  - MCP server installation to `~/.copilot/mcp-config.json`
+  - Skills and agents installation
+  - TUI integration
+- **npm publishing** - Bridle is now available via npm for easier installation (#30)
+
+### Changed
+
+- Switch from git dependencies to versioned crates (`harness-locate 0.4.1`, `skills-locate 0.2.2`)
+  - Enables `cargo install bridle` and crates.io publishing
+  - Improves build reproducibility
+
+## [0.2.6] - 2026-01-09
+
+### Fixed
+
+- Resolve TUI and profile switching performance issues (#25)
+- Implement complete profile resource isolation (#24)
+
 ## [0.2.5] - 2026-01-06
 
 ### Added

@@ -1,4 +1,5 @@
 mod detail_pane;
+mod empty_state;
 mod harness_tabs;
 mod profile_table;
 mod status_bar;
@@ -9,6 +10,7 @@ mod card_grid;
 mod profile_card;
 
 pub use detail_pane::{DetailPane, render_profile_details};
+pub use empty_state::EmptyState;
 pub use harness_tabs::HarnessTabs;
 pub use profile_table::ProfileTable;
 pub use status_bar::StatusBar;
