@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-01-20
+
+### Added
+
+- **Crush CLI harness support** - Full support for Crush CLI as a new harness
+  - Profile management (create, switch, show, delete)
+  - MCP server installation to `~/.config/crush/crush.json`
+  - Skills installation to `~/.config/crush/skills/`
+  - MCP extraction support for reading existing Crush configurations
+  - TUI integration
+  - Thanks to [@rari404](https://github.com/edlsh) for the contribution!
+- **Copilot CLI harness support** - Full support for GitHub Copilot CLI
+  - Profile management (create, switch, show, delete)
+  - MCP server installation to `~/.copilot/mcp-config.json`
+  - Skills and agents installation
+  - TUI integration
+  - Thanks to [@kaiiiiiiiii](https://github.com/kaiiiiiiiii) for the contribution!
+- **TUI profile creation improvements** - Added copy-from-current toggle in profile creation (#23)
+  - Interactive checkbox to copy current harness configuration when creating new profiles
+  - Improved input handling and layout in TUI profile creation popup
+  - Enhanced error handling and user feedback
+
+### Documentation
+
+- Removed old version warning from README
+- Added npm installation guidance with try/install sections
+- Updated header image
+- Restructured installation section with "try" vs "install" options for better clarity
+
 ## [0.2.7] - 2026-01-16
 
 ### Added
