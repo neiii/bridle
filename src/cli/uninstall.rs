@@ -116,7 +116,4 @@ fn list_installed_components(profile_path: &Path) -> Result<Vec<(String, Compone
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-}
+mod tests {}

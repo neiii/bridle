@@ -59,6 +59,7 @@ impl HarnessConfig for harness_locate::Harness {
             harness_locate::HarnessKind::Goose => "goose",
             harness_locate::HarnessKind::AmpCode => "amp-code",
             harness_locate::HarnessKind::Crush => "crush",
+            harness_locate::HarnessKind::CopilotCli => "copilot-cli",
             _ => "unknown",
         }
     }
