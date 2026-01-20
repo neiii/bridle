@@ -1,6 +1,6 @@
 [package]
 name = "bridle"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license = "MIT"
