@@ -54,6 +54,7 @@ fn harness_id(kind: &HarnessKind) -> &'static str {
         HarnessKind::AmpCode => "amp-code",
         HarnessKind::CopilotCli => "copilot-cli",
         HarnessKind::Crush => "crush",
+        HarnessKind::Droid => "droid",
         _ => "unknown",
     }
 }
@@ -66,6 +67,7 @@ fn harness_name(kind: &HarnessKind) -> &'static str {
         HarnessKind::AmpCode => "AMP Code",
         HarnessKind::CopilotCli => "Copilot CLI",
         HarnessKind::Crush => "Crush",
+        HarnessKind::Droid => "Factory Droid",
         _ => "Unknown",
     }
 }
@@ -118,18 +120,29 @@ impl App {
         let bridle_config = BridleConfig::load()?;
         let profiles_dir = BridleConfig::profiles_dir()?;
         let manager = ProfileManager::new(profiles_dir);
-        let harnesses = HarnessKind::ALL.to_vec();
+
+        // Sort harnesses: installed first, then not installed
+        let mut harnesses = HarnessKind::ALL.to_vec();
+        harnesses.sort_by_key(|kind| {
+            let harness = Harness::new(*kind);
+            if harness.is_installed() { 0 } else { 1 }
+        });
+
+        // If a default harness is configured, move it to position 0
+        if let Some(default_id) = bridle_config.default_harness()
+            && let Some(pos) = harnesses.iter().position(|h| harness_id(h) == default_id)
+        {
+            let kind = harnesses.remove(pos);
+            harnesses.insert(0, kind);
+        }
 
         for kind in &harnesses {
             let harness = Harness::new(*kind);
             let _ = manager.create_from_current_if_missing(&harness);
         }
         let mut harness_state = ListState::default();
-        let default_idx = bridle_config
-            .default_harness()
-            .and_then(|id| harnesses.iter().position(|h| harness_id(h) == id))
-            .unwrap_or(0);
-        harness_state.select(Some(default_idx));
+        // Always select the first harness (which is now the default or first installed)
+        harness_state.select(Some(0));
 
         let mut app = Self {
             running: true,
@@ -932,8 +945,8 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
     render_create_profile_input_field(frame, app, chunks[0]);
     render_create_profile_checkbox(frame, app, chunks[1]);
 
-    let tips_idx = if app.create_profile_error.is_some() {
-        render_create_profile_error(frame, app.create_profile_error.as_ref().unwrap(), chunks[3]);
+    let tips_idx = if let Some(error) = &app.create_profile_error {
+        render_create_profile_error(frame, error, chunks[3]);
         5
     } else {
         3

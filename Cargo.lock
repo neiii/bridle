@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "bridle"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -725,8 +725,8 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "harness-locate"
-version = "0.5.0"
-source = "git+https://github.com/neiii/harness-barn?branch=master#eb55cc5abe8fb9f36421814991628b73bac34fc9"
+version = "0.6.0"
+source = "git+https://github.com/neiii/harness-barn?branch=master#bd3fae96b2f7088e7b2461463c1f9e68b6b54487"
 dependencies = [
  "home",
  "regex",
@@ -1586,8 +1586,8 @@ checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "skills-locate"
-version = "0.2.1"
-source = "git+https://github.com/neiii/harness-barn?branch=master#eb55cc5abe8fb9f36421814991628b73bac34fc9"
+version = "0.3.0"
+source = "git+https://github.com/neiii/harness-barn?branch=master#bd3fae96b2f7088e7b2461463c1f9e68b6b54487"
 dependencies = [
  "harness-locate",
  "serde",
