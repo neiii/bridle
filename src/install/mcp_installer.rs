@@ -43,6 +43,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
         "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
         "crush" => Some(HarnessKind::Crush),
+        "droid" | "factory" => Some(HarnessKind::Droid),
         _ => None,
     }
 }
@@ -55,6 +56,7 @@ fn get_profile_config_path(profile_dir: &Path, harness_kind: HarnessKind) -> Pat
         HarnessKind::AmpCode => profile_dir.join("settings.json"),
         HarnessKind::CopilotCli => profile_dir.join("mcp-config.json"),
         HarnessKind::Crush => profile_dir.join("crush.json"),
+        HarnessKind::Droid => profile_dir.join("mcp.json"),
         _ => profile_dir.join("config.json"),
     }
 }

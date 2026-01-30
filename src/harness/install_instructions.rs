@@ -8,6 +8,7 @@ pub fn get_install_instructions(kind: HarnessKind) -> Vec<String> {
         HarnessKind::AmpCode => amp_instructions(),
         HarnessKind::CopilotCli => copilot_cli_instructions(),
         HarnessKind::Crush => crush_instructions(),
+        HarnessKind::Droid => droid_instructions(),
         _ => vec!["Unknown harness".to_string()],
     }
 }
@@ -37,6 +38,13 @@ fn crush_instructions() -> Vec<String> {
     vec![
         "- Visit https://charm.sh/crush for installation instructions".to_string(),
         "- brew install charmbracelet/tap/crush".to_string(),
+    ]
+}
+
+fn droid_instructions() -> Vec<String> {
+    vec![
+        "- Visit https://factory.ai for installation instructions".to_string(),
+        "- brew install factory-ai/tap/droid".to_string(),
     ]
 }
 
@@ -134,6 +142,7 @@ pub fn get_empty_state_message(
         HarnessKind::AmpCode => "AMP Code",
         HarnessKind::CopilotCli => "Copilot CLI",
         HarnessKind::Crush => "Crush",
+        HarnessKind::Droid => "Factory Droid",
         _ => "Unknown",
     };
 
@@ -182,6 +191,7 @@ pub fn get_empty_state_message(
                 HarnessKind::AmpCode => "amp",
                 HarnessKind::CopilotCli => "copilot",
                 HarnessKind::Crush => "crush",
+                HarnessKind::Droid => "droid",
                 _ => "<unknown>",
             };
 

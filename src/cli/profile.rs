@@ -22,6 +22,7 @@ pub(crate) fn resolve_harness(name: &str) -> Result<Harness> {
         "amp-code" | "amp" | "ampcode" => HarnessKind::AmpCode,
         "copilot-cli" | "copilot" | "ghcp" => HarnessKind::CopilotCli,
         "crush" => HarnessKind::Crush,
+        "droid" | "factory" => HarnessKind::Droid,
         _ => return Err(Error::UnknownHarness(name.to_string())),
     };
     Ok(Harness::new(kind))

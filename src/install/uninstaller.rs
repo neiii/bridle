@@ -37,6 +37,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
         "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
         "crush" => Some(HarnessKind::Crush),
+        "droid" | "factory" => Some(HarnessKind::Droid),
         _ => None,
     }
 }

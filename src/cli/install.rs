@@ -94,6 +94,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
         "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
         "crush" => Some(HarnessKind::Crush),
+        "droid" | "factory" => Some(HarnessKind::Droid),
         _ => None,
     }
 }
@@ -408,6 +409,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         HarnessKind::AmpCode,
         HarnessKind::CopilotCli,
         HarnessKind::Crush,
+        HarnessKind::Droid,
     ];
 
     let mut groups: Vec<TargetGroup> = Vec::new();
