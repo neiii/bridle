@@ -1,26 +1,27 @@
-[package]
-name = "bridle"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.2.9"
 edition = "2024"
-description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license = "MIT"
 repository = "https://github.com/neiii/bridle"
 homepage = "https://github.com/neiii/bridle"
-readme = "README.md"
-keywords = ["ai", "cli", "configuration", "tui", "mcp"]
-categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates (for future use)
+# harness-locate = { path = "crates/harness-locate" }
+# skills-locate = { path = "crates/skills-locate" }
+
+# External crates (current)
 harness-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
 skills-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
-
-
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 dialoguer-multiselect = "0.13.2"
-
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -41,11 +42,7 @@ ratatui = "0.29"
 crossterm = "0.28"
 colored = "3.0.0"
 
-[features]
-default = []
-tui-cards = []
-
-[dev-dependencies]
+# Dev dependencies
 tempfile = "3.24.0"
 assert_cmd = "2.0"
 predicates = "3.1"

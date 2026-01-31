@@ -1,10 +1,11 @@
 [workspace]
-members = ["cargo:."]
+members = ["cargo:crates/bridle"]
 
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.30.3"
+# Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
 # CI backends to support
 ci = "github"
