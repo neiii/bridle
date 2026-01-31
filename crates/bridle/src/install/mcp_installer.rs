@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::installer::InstallError;
 use super::mcp_config::{mcp_exists, write_mcp_config};
-use super::types::{InstallOptions, InstallTarget, SkipReason};
+use super::types::{InstallOptions, InstallTarget, SkipReason, parse_harness_kind};
 use crate::config::BridleConfig;
 
 #[derive(Debug, Clone)]
@@ -34,19 +34,6 @@ pub enum McpInstallOutcome {
 }
 
 pub type McpInstallResult = Result<McpInstallOutcome, InstallError>;
-
-fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
-    match id {
-        "claude-code" | "claude" | "cc" => Some(HarnessKind::ClaudeCode),
-        "opencode" | "oc" => Some(HarnessKind::OpenCode),
-        "goose" => Some(HarnessKind::Goose),
-        "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
-        "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
-        "crush" => Some(HarnessKind::Crush),
-        "droid" | "factory" => Some(HarnessKind::Droid),
-        _ => None,
-    }
-}
 
 fn get_profile_config_path(profile_dir: &Path, harness_kind: HarnessKind) -> PathBuf {
     match harness_kind {

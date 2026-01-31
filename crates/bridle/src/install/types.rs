@@ -3,10 +3,24 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use harness_locate::McpServer;
+use harness_locate::{HarnessKind, McpServer};
 use serde::Serialize;
 
 use crate::config::ProfileName;
+
+/// Parse a harness identifier string into a HarnessKind.
+pub fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
+    match id {
+        "claude-code" | "claude" | "cc" => Some(HarnessKind::ClaudeCode),
+        "opencode" | "oc" => Some(HarnessKind::OpenCode),
+        "goose" => Some(HarnessKind::Goose),
+        "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
+        "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
+        "crush" => Some(HarnessKind::Crush),
+        "droid" | "factory" => Some(HarnessKind::Droid),
+        _ => None,
+    }
+}
 
 /// Information about a discovered skill
 #[derive(Debug, Clone)]

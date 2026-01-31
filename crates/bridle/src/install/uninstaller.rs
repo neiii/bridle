@@ -10,6 +10,7 @@ use harness_locate::{Harness, HarnessKind, Scope};
 use super::manifest::{InstallManifest, manifest_path};
 use super::types::{
     ComponentType, InstallTarget, UninstallFailure, UninstallReport, UninstallSuccess,
+    parse_harness_kind,
 };
 use crate::config::BridleConfig;
 use crate::harness::HarnessConfig;
@@ -27,19 +28,6 @@ pub enum UninstallError {
 
     #[error("Harness not found: {0}")]
     HarnessNotFound(String),
-}
-
-fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
-    match id {
-        "claude-code" | "claude" | "cc" => Some(HarnessKind::ClaudeCode),
-        "opencode" | "oc" => Some(HarnessKind::OpenCode),
-        "goose" => Some(HarnessKind::Goose),
-        "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
-        "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
-        "crush" => Some(HarnessKind::Crush),
-        "droid" | "factory" => Some(HarnessKind::Droid),
-        _ => None,
-    }
 }
 
 pub fn uninstall_component(

@@ -12,4 +12,4 @@ pub mod types;
 pub mod uninstaller;
 
 pub use discovery::{DiscoveryError, discover_skills};
-pub use types::*;
+pub use types::{parse_harness_kind, *};

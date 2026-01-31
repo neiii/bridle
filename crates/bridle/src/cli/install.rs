@@ -16,6 +16,7 @@ use crate::install::installer::{install_agent, install_command, install_skills};
 use crate::install::mcp_installer::{McpInstallOutcome, install_mcp};
 use crate::install::{
     AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, SkillInfo,
+    parse_harness_kind,
 };
 use harness_locate::McpServer;
 use std::collections::HashMap;
@@ -84,19 +85,6 @@ fn get_incompatible_mcp_names(mcps: &HashMap<String, McpServer>, kind: HarnessKi
 
 fn is_mcp_compatible(server: &McpServer, kind: HarnessKind) -> bool {
     server.validate_capabilities(kind).is_ok()
-}
-
-fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
-    match id {
-        "claude-code" | "claude" | "cc" => Some(HarnessKind::ClaudeCode),
-        "opencode" | "oc" => Some(HarnessKind::OpenCode),
-        "goose" => Some(HarnessKind::Goose),
-        "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
-        "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
-        "crush" => Some(HarnessKind::Crush),
-        "droid" | "factory" => Some(HarnessKind::Droid),
-        _ => None,
-    }
 }
 
 /// Selected components from the discovery result

@@ -11,6 +11,7 @@ use super::manifest::{InstallManifest, ManifestEntry, manifest_path};
 use super::types::{
     AgentInfo, CommandInfo, ComponentType, InstallFailure, InstallOptions, InstallReport,
     InstallSkip, InstallSuccess, InstallTarget, SkillInfo, SkipReason, SourceInfo,
+    parse_harness_kind,
 };
 use crate::config::BridleConfig;
 use crate::harness::HarnessConfig;
@@ -44,19 +45,6 @@ fn validate_component_name(name: &str) -> Result<(), InstallError> {
         return Err(InstallError::InvalidComponentName(name.to_string()));
     }
     Ok(())
-}
-
-fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
-    match id {
-        "claude-code" | "claude" | "cc" => Some(HarnessKind::ClaudeCode),
-        "opencode" | "oc" => Some(HarnessKind::OpenCode),
-        "goose" => Some(HarnessKind::Goose),
-        "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
-        "copilot-cli" | "copilot" | "ghcp" => Some(HarnessKind::CopilotCli),
-        "crush" => Some(HarnessKind::Crush),
-        "droid" | "factory" => Some(HarnessKind::Droid),
-        _ => None,
-    }
 }
 
 pub fn sanitize_name_for_opencode(name: &str) -> String {
