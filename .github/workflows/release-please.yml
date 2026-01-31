@@ -32,7 +32,8 @@ jobs:
       - name: Update workspace version
         run: |
           VERSION="${{ needs.release-please.outputs.bridle-version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          # Update only version in [workspace.package] section
+          sed -i '/^\[workspace\.package\]/,/^\[/ s/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
