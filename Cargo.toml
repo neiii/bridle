@@ -37,7 +37,7 @@ which = "7"
 url = "2"
 regex = "1"
 ureq = "3"
-zip = "2"
+zip = "7"
 
 # TUI
 ratatui = "0.30"
