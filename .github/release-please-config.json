@@ -14,7 +14,7 @@
     "crates/bridle": {
       "release-type": "rust",
       "component": "bridle",
-      "changelog-path": "../../CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "separate-pull-requests": true
