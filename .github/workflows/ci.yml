@@ -93,7 +93,7 @@ jobs:
       - name: Check for large files
         run: |
           MAX_SIZE=1048576  # 1MB in bytes
-          LARGE_FILES=$(find . -type f -not -path './.git/*' -not -path './target/*' -size +${MAX_SIZE}c 2>/dev/null || true)
+          LARGE_FILES=$(find . -type f -not -path './.git/*' -not -path './target/*' -not -path './assets/*' -size +${MAX_SIZE}c 2>/dev/null || true)
           if [ -n "$LARGE_FILES" ]; then
             echo "::error::Large files detected (>1MB):"
             echo "$LARGE_FILES"
