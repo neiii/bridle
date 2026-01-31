@@ -10,6 +10,8 @@ on:
         type: boolean
         default: true
 
+permissions: {}
+
 jobs:
   notify:
     runs-on: ubuntu-latest
