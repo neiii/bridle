@@ -39,7 +39,7 @@ textwrap = "0.16"
 
 # TUI
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 colored = "3.0.0"
 
 # Dev dependencies
