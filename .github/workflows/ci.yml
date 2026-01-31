@@ -89,7 +89,7 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run coverage
-        run: cargo tarpaulin --out Xml --fail-under 20
+        run: cargo tarpaulin --out Xml --fail-under 30
 
   unused-deps:
     name: Unused Dependencies
