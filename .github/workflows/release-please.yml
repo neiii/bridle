@@ -11,8 +11,32 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      bridle-release-created: ${{ steps.release.outputs['crates/bridle--release_created'] }}
+      bridle-version: ${{ steps.release.outputs['crates/bridle--version'] }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/release-please-manifest.json
+
+  sync-workspace-version:
+    needs: release-please
+    if: needs.release-please.outputs.bridle-release-created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+      - name: Update workspace version
+        run: |
+          VERSION="${{ needs.release-please.outputs.bridle-version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git diff --cached --quiet || git commit -m "chore: sync workspace version to ${{ needs.release-please.outputs.bridle-version }}"
+          git push
