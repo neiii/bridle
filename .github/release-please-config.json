@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "crates/harness-locate": {
+      "release-type": "rust",
+      "component": "harness-locate",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "crates/skills-locate": {
+      "release-type": "rust",
+      "component": "skills-locate",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "crates/bridle": {
+      "release-type": "rust",
+      "component": "bridle",
+      "changelog-path": "../../CHANGELOG.md"
+    }
+  },
+  "separate-pull-requests": true
+}

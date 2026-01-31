@@ -11,13 +11,9 @@ homepage = "https://github.com/neiii/bridle"
 authors = ["d0"]
 
 [workspace.dependencies]
-# Internal crates (for future use)
-# harness-locate = { path = "crates/harness-locate" }
-# skills-locate = { path = "crates/skills-locate" }
-
-# External crates (current)
-harness-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
-skills-locate = { git = "https://github.com/neiii/harness-barn", branch = "master" }
+# Internal crates
+harness-locate = { path = "crates/harness-locate" }
+skills-locate = { path = "crates/skills-locate" }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -36,6 +32,12 @@ color-eyre = "0.6"
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 textwrap = "0.16"
+home = "0.5"
+which = "7"
+url = "2"
+regex = "1"
+ureq = "3"
+zip = "2"
 
 # TUI
 ratatui = "0.30"

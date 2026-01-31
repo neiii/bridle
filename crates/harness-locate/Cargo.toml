@@ -1,0 +1,23 @@
+[package]
+name = "harness-locate"
+version = "0.6.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Cross-platform library for configuration, path discovery and MCP server management for agentic code harnesses (Claude Code, OpenCode, Goose, AMP Code, Copilot CLI, Droid)"
+readme = "README.md"
+keywords = ["ai", "mcp", "configuration", "llm", "agent"]
+categories = ["development-tools", "config", "filesystem"]
+
+[dependencies]
+home.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+which.workspace = true
+url.workspace = true
+regex.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,51 @@
+name: Publish Crates
+
+on:
+  push:
+    tags:
+      - 'harness-locate-v*'
+      - 'skills-locate-v*'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Determine crate to publish
+        id: crate
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == harness-locate-v* ]]; then
+            echo "name=harness-locate" >> $GITHUB_OUTPUT
+            echo "path=crates/harness-locate" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == skills-locate-v* ]]; then
+            echo "name=skills-locate" >> $GITHUB_OUTPUT
+            echo "path=crates/skills-locate" >> $GITHUB_OUTPUT
+          else
+            echo "Unknown tag: $TAG"
+            exit 1
+          fi
+
+      - name: Publish harness-locate first (if publishing skills-locate)
+        if: steps.crate.outputs.name == 'skills-locate'
+        run: |
+          echo "Checking if harness-locate needs to be published first..."
+          # skills-locate depends on harness-locate, ensure it's available
+          cargo publish --dry-run -p harness-locate || true
+
+      - name: Publish ${{ steps.crate.outputs.name }}
+        run: cargo publish -p ${{ steps.crate.outputs.name }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
