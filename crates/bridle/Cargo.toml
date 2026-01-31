@@ -1,6 +1,6 @@
 [package]
 name = "bridle"
-version.workspace = true
+version = "0.2.9"
 edition.workspace = true
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license.workspace = true
