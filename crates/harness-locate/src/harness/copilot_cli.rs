@@ -4,13 +4,14 @@
 //! - **Global**: `$XDG_CONFIG_HOME/copilot` or `~/.copilot/`
 //! - **Project**: `.github/` in project root
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, SseMcpServer, StdioMcpServer};
+use crate::mcp::McpServer;
 use crate::platform;
-use crate::types::{EnvValue, HarnessKind, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Environment variable for XDG config directory override.
 const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
@@ -145,140 +146,28 @@ pub fn is_installed() -> bool {
 /// # Errors
 /// Returns an error if the JSON is malformed or missing required fields.
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::COPILOT_CLI;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Copilot CLI".to_string(),
+            harness: config.harness_name.to_string(),
             reason: "Server configuration must be an object".to_string(),
         })?;
 
     // Check if this is an SSE or HTTP server (has "type" field)
     if let Some(server_type) = obj.get("type").and_then(|v| v.as_str()) {
         match server_type {
-            "sse" => parse_sse_server(obj),
-            "http" => parse_http_server(obj),
-            "stdio" | "local" => parse_stdio_server(obj),
+            "sse" => mcp_parse::parse_sse_server(obj, &config),
+            "http" => mcp_parse::parse_http_server(obj, &config),
+            "stdio" | "local" => mcp_parse::parse_stdio_server(obj, &config),
             _ => Err(Error::UnsupportedMcpConfig {
-                harness: "Copilot CLI".to_string(),
+                harness: config.harness_name.to_string(),
                 reason: format!("Unknown server type: {}", server_type),
             }),
         }
     } else {
-        parse_stdio_server(obj)
+        mcp_parse::parse_stdio_server(obj, &config)
     }
-}
-
-fn parse_stdio_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let command = obj
-        .get("command")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Copilot CLI".to_string(),
-            reason: "Stdio server missing 'command' field".to_string(),
-        })?
-        .to_string();
-
-    let args = if let Some(args_value) = obj.get("args") {
-        let arr = args_value
-            .as_array()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Copilot CLI".to_string(),
-                reason: "'args' must be an array".to_string(),
-            })?;
-        arr.iter()
-            .enumerate()
-            .map(|(i, v)| {
-                v.as_str()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Copilot CLI".to_string(),
-                        reason: format!("args[{}] must be a string", i),
-                    })
-                    .map(String::from)
-            })
-            .collect::<Result<Vec<_>>>()?
-    } else {
-        Vec::new()
-    };
-
-    let env = parse_string_map(obj, "env", "Environment variable")?;
-
-    Ok(McpServer::Stdio(StdioMcpServer {
-        command,
-        args,
-        env,
-        cwd: None,
-        enabled: true,
-        timeout_ms: obj.get("timeout").and_then(|v| v.as_u64()),
-    }))
-}
-
-fn parse_sse_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let url = obj
-        .get("url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Copilot CLI".to_string(),
-            reason: "SSE server missing 'url' field".to_string(),
-        })?
-        .to_string();
-
-    let headers = parse_string_map(obj, "headers", "Header")?;
-
-    Ok(McpServer::Sse(SseMcpServer {
-        url,
-        headers,
-        enabled: true,
-        timeout_ms: obj.get("timeout").and_then(|v| v.as_u64()),
-    }))
-}
-
-fn parse_http_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let url = obj
-        .get("url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Copilot CLI".to_string(),
-            reason: "HTTP server missing 'url' field".to_string(),
-        })?
-        .to_string();
-
-    let headers = parse_string_map(obj, "headers", "Header")?;
-
-    Ok(McpServer::Http(HttpMcpServer {
-        url,
-        headers,
-        oauth: None,
-        enabled: true,
-        timeout_ms: obj.get("timeout").and_then(|v| v.as_u64()),
-    }))
-}
-
-fn parse_string_map(
-    obj: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-    item_desc: &str,
-) -> Result<HashMap<String, EnvValue>> {
-    let mut map = HashMap::new();
-    if let Some(value) = obj.get(field) {
-        let map_obj = value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Copilot CLI".to_string(),
-                reason: format!("'{}' must be an object", field),
-            })?;
-
-        for (key, value) in map_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Copilot CLI".to_string(),
-                reason: format!("{} '{}' must be a string", item_desc, key),
-            })?;
-            map.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::CopilotCli),
-            );
-        }
-    }
-    Ok(map)
 }
 
 /// Parses all MCP servers from a Copilot CLI config JSON.
@@ -289,26 +178,18 @@ fn parse_string_map(
 /// # Errors
 /// Returns an error if the JSON is malformed.
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
-    let servers_obj = config
-        .get("mcpServers")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Copilot CLI".to_string(),
-            reason: "Config missing 'mcpServers' object".to_string(),
-        })?;
-
-    let mut result = Vec::new();
-    for (name, value) in servers_obj {
-        let server = parse_mcp_server(value)?;
-        result.push((name.clone(), server));
-    }
-
-    Ok(result)
+    mcp_parse::parse_servers_from_key(
+        config,
+        "mcpServers",
+        &ParseConfig::COPILOT_CLI,
+        parse_mcp_server,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]

@@ -4,13 +4,14 @@
 //! - **Global**: `~/.config/opencode/`
 //! - **Project**: `.opencode/` in project root
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, OAuthConfig, StdioMcpServer};
+use crate::mcp::{HttpMcpServer, McpServer, StdioMcpServer};
 use crate::platform;
-use crate::types::{EnvValue, HarnessKind, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Returns the global OpenCode configuration directory.
 ///
@@ -109,10 +110,11 @@ pub fn is_installed() -> bool {
 /// Returns an error if the JSON is malformed or missing required fields.
 #[allow(dead_code)] // Internal utility for future MCP config reading
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::OPENCODE;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
+            harness: config.harness_name.into(),
             reason: "Server config must be an object".into(),
         })?;
 
@@ -120,7 +122,7 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
         obj.get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
+                harness: config.harness_name.into(),
                 reason: "Missing 'type' field".into(),
             })?;
 
@@ -128,7 +130,7 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
         "local" => parse_local_server(obj),
         "remote" => parse_remote_server(obj),
         other => Err(Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
+            harness: config.harness_name.into(),
             reason: format!("Unknown server type: {other}"),
         }),
     }
@@ -145,45 +147,25 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
 /// Returns an error if the JSON is malformed.
 #[allow(dead_code)] // Internal utility for future MCP config reading
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
-    let mcp = config
-        .get("mcp")
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
-            reason: "Missing 'mcp' key in config".into(),
-        })?;
-
-    let mcp_obj = mcp.as_object().ok_or_else(|| Error::UnsupportedMcpConfig {
-        harness: "OpenCode".into(),
-        reason: "'mcp' must be an object".into(),
-    })?;
-
-    let mut servers = Vec::new();
-    for (name, server_value) in mcp_obj {
-        let server = parse_mcp_server(server_value).map_err(|e| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
-            reason: format!("server '{}': {}", name, e),
-        })?;
-
-        servers.push((name.clone(), server));
-    }
-
-    Ok(servers)
+    mcp_parse::parse_servers_from_key(config, "mcp", &ParseConfig::OPENCODE, parse_mcp_server)
 }
 
 #[allow(dead_code)] // Internal utility for future MCP config reading
 fn parse_local_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
+    let config = ParseConfig::OPENCODE;
+
     // Parse command array: first element is command, rest are args
     let command_array = obj
         .get("command")
         .and_then(|v| v.as_array())
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
+            harness: config.harness_name.into(),
             reason: "Missing or invalid 'command' field".into(),
         })?;
 
     if command_array.is_empty() {
         return Err(Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
+            harness: config.harness_name.into(),
             reason: "Command array must not be empty".into(),
         });
     }
@@ -191,7 +173,7 @@ fn parse_local_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resul
     let command = command_array[0]
         .as_str()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
+            harness: config.harness_name.into(),
             reason: "Command must be a string".into(),
         })?
         .to_string();
@@ -201,7 +183,7 @@ fn parse_local_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resul
         .map(|v| {
             v.as_str()
                 .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "OpenCode".into(),
+                    harness: config.harness_name.into(),
                     reason: "Command arguments must be strings".into(),
                 })
                 .map(String::from)
@@ -209,32 +191,24 @@ fn parse_local_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resul
         .collect::<Result<Vec<_>>>()?;
 
     // Parse environment variables
-    let mut env = HashMap::new();
-    if let Some(environment) = obj.get("environment") {
-        let env_obj = environment
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
-                reason: "'environment' must be an object".into(),
-            })?;
-
-        for (key, value) in env_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
-                reason: "Environment variable values must be strings".into(),
-            })?;
-            env.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::OpenCode),
-            );
-        }
-    }
+    let env = mcp_parse::parse_env_map(
+        obj,
+        config.env_field,
+        config.harness_name,
+        config.harness_kind,
+        config.plain_env_values,
+    )?;
 
     // Parse enabled flag (defaults to true)
-    let enabled = obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let enabled = mcp_parse::parse_enabled(obj, config.disabled_field);
 
     // Parse timeout in milliseconds
-    let timeout_ms = obj.get("timeout").and_then(|v| v.as_u64());
+    let timeout_ms = mcp_parse::parse_timeout(
+        obj,
+        config.timeout_field,
+        config.timeout_in_seconds,
+        config.harness_name,
+    )?;
 
     Ok(McpServer::Stdio(StdioMcpServer {
         command,
@@ -248,98 +222,40 @@ fn parse_local_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resul
 
 #[allow(dead_code)] // Internal utility for future MCP config reading
 fn parse_remote_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
+    let config = ParseConfig::OPENCODE;
+
     // Parse URL
     let url = obj
-        .get("url")
+        .get(config.url_field)
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "OpenCode".into(),
-            reason: "Missing or invalid 'url' field".into(),
+            harness: config.harness_name.into(),
+            reason: format!("Missing or invalid '{}' field", config.url_field),
         })?
         .to_string();
 
     // Parse headers
-    let mut headers = HashMap::new();
-    if let Some(headers_value) = obj.get("headers") {
-        let headers_obj = headers_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
-                reason: "'headers' must be an object".into(),
-            })?;
+    let headers = mcp_parse::parse_env_map(
+        obj,
+        "headers",
+        config.harness_name,
+        config.harness_kind,
+        config.plain_env_values,
+    )?;
 
-        for (key, value) in headers_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
-                reason: "Header values must be strings".into(),
-            })?;
-            headers.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::OpenCode),
-            );
-        }
-    }
-
-    let oauth = if let Some(oauth_value) = obj.get("oauth") {
-        let oauth_obj = oauth_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "OpenCode".into(),
-                reason: "'oauth' must be an object".into(),
-            })?;
-
-        let client_id = if let Some(v) = oauth_obj.get("client_id") {
-            Some(
-                v.as_str()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "OpenCode".into(),
-                        reason: "oauth.client_id must be a string".into(),
-                    })?
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-
-        let client_secret = if let Some(v) = oauth_obj.get("client_secret") {
-            Some(EnvValue::from_native(
-                v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "OpenCode".into(),
-                    reason: "oauth.client_secret must be a string".into(),
-                })?,
-                HarnessKind::OpenCode,
-            ))
-        } else {
-            None
-        };
-
-        let scope = if let Some(v) = oauth_obj.get("scope") {
-            Some(
-                v.as_str()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "OpenCode".into(),
-                        reason: "oauth.scope must be a string".into(),
-                    })?
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-
-        Some(OAuthConfig {
-            client_id,
-            client_secret,
-            scope,
-        })
-    } else {
-        None
-    };
+    // Parse OAuth
+    let oauth = mcp_parse::parse_oauth(obj, &config)?;
 
     // Parse enabled flag (defaults to true)
-    let enabled = obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let enabled = mcp_parse::parse_enabled(obj, config.disabled_field);
 
     // Parse timeout in milliseconds
-    let timeout_ms = obj.get("timeout").and_then(|v| v.as_u64());
+    let timeout_ms = mcp_parse::parse_timeout(
+        obj,
+        config.timeout_field,
+        config.timeout_in_seconds,
+        config.harness_name,
+    )?;
 
     Ok(McpServer::Http(HttpMcpServer {
         url,
@@ -353,6 +269,7 @@ fn parse_remote_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]

@@ -16,6 +16,7 @@ pub mod copilot_cli;
 pub mod crush;
 pub mod droid;
 pub mod goose;
+pub(crate) mod mcp_parse;
 pub mod opencode;
 
 /// A discovered harness with resolved base paths.

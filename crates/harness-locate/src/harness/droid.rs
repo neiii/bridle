@@ -4,13 +4,14 @@
 //! - **Global**: `~/.factory/`
 //! - **Project**: `.factory/` in project root
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, SseMcpServer, StdioMcpServer};
+use crate::mcp::McpServer;
 use crate::platform;
-use crate::types::{EnvValue, HarnessKind, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Returns the global Droid configuration directory.
 ///
@@ -120,189 +121,30 @@ pub fn is_installed() -> bool {
 /// # Errors
 /// Returns an error if the JSON is malformed or missing required fields.
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::DROID;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Droid".to_string(),
+            harness: config.harness_name.to_string(),
             reason: "Server configuration must be an object".to_string(),
         })?;
 
     // Check if this is an SSE or HTTP server (has "type" field)
     if let Some(server_type) = obj.get("type").and_then(|v| v.as_str()) {
         match server_type {
-            "http" => {
-                let url = obj
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Droid".to_string(),
-                        reason: "HTTP server missing 'url' field".to_string(),
-                    })?
-                    .to_string();
-
-                let mut headers = HashMap::new();
-                if let Some(headers_value) = obj.get("headers") {
-                    let headers_obj =
-                        headers_value
-                            .as_object()
-                            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                                harness: "Droid".to_string(),
-                                reason: "'headers' must be an object".to_string(),
-                            })?;
-                    for (key, value) in headers_obj {
-                        let value_str =
-                            value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                                harness: "Droid".to_string(),
-                                reason: format!("Header '{}' must be a string", key),
-                            })?;
-                        headers.insert(
-                            key.clone(),
-                            EnvValue::from_native(value_str, HarnessKind::Droid),
-                        );
-                    }
-                }
-
-                let enabled = obj
-                    .get("disabled")
-                    .and_then(|v| v.as_bool())
-                    .map(|d| !d)
-                    .unwrap_or(true);
-
-                let timeout_ms = obj.get("timeout").and_then(|v| v.as_u64());
-
-                Ok(McpServer::Http(HttpMcpServer {
-                    url,
-                    headers,
-                    oauth: None, // OAuth handled via browser flow
-                    enabled,
-                    timeout_ms,
-                }))
-            }
-            "stdio" => parse_stdio_server(obj),
+            "http" => mcp_parse::parse_http_server(obj, &config),
+            "stdio" => mcp_parse::parse_stdio_server(obj, &config),
             _ => Err(Error::UnsupportedMcpConfig {
-                harness: "Droid".to_string(),
+                harness: config.harness_name.to_string(),
                 reason: format!("Unknown server type: {}", server_type),
             }),
         }
     } else if obj.contains_key("url") {
         // SSE server (remote without explicit type, or with url field)
-        let url = obj
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Droid".to_string(),
-                reason: "Server missing 'url' field".to_string(),
-            })?
-            .to_string();
-
-        let mut headers = HashMap::new();
-        if let Some(headers_value) = obj.get("headers") {
-            let headers_obj =
-                headers_value
-                    .as_object()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Droid".to_string(),
-                        reason: "'headers' must be an object".to_string(),
-                    })?;
-            for (key, value) in headers_obj {
-                let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Droid".to_string(),
-                    reason: format!("Header '{}' must be a string", key),
-                })?;
-                headers.insert(
-                    key.clone(),
-                    EnvValue::from_native(value_str, HarnessKind::Droid),
-                );
-            }
-        }
-
-        let enabled = obj
-            .get("disabled")
-            .and_then(|v| v.as_bool())
-            .map(|d| !d)
-            .unwrap_or(true);
-
-        let timeout_ms = obj.get("timeout").and_then(|v| v.as_u64());
-
-        Ok(McpServer::Sse(SseMcpServer {
-            url,
-            headers,
-            enabled,
-            timeout_ms,
-        }))
+        mcp_parse::parse_sse_server(obj, &config)
     } else {
-        parse_stdio_server(obj)
+        mcp_parse::parse_stdio_server(obj, &config)
     }
-}
-
-fn parse_stdio_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let command = obj
-        .get("command")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Droid".to_string(),
-            reason: "Stdio server missing 'command' field".to_string(),
-        })?
-        .to_string();
-
-    let args = if let Some(args_value) = obj.get("args") {
-        let arr = args_value
-            .as_array()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Droid".to_string(),
-                reason: "'args' must be an array".to_string(),
-            })?;
-        arr.iter()
-            .enumerate()
-            .map(|(i, v)| {
-                v.as_str()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Droid".to_string(),
-                        reason: format!("args[{}] must be a string", i),
-                    })
-                    .map(String::from)
-            })
-            .collect::<Result<Vec<_>>>()?
-    } else {
-        Vec::new()
-    };
-
-    let mut env = HashMap::new();
-    if let Some(env_value) = obj.get("env") {
-        let env_obj = env_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Droid".to_string(),
-                reason: "'env' must be an object".to_string(),
-            })?;
-        for (key, value) in env_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Droid".to_string(),
-                reason: format!("Environment variable '{}' must be a string", key),
-            })?;
-            env.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::Droid),
-            );
-        }
-    }
-
-    let enabled = obj
-        .get("disabled")
-        .and_then(|v| v.as_bool())
-        .map(|d| !d)
-        .unwrap_or(true);
-
-    let timeout_ms = obj.get("timeout").and_then(|v| v.as_u64());
-
-    Ok(McpServer::Stdio(StdioMcpServer {
-        command,
-        args,
-        env,
-        cwd: None,
-        enabled,
-        timeout_ms,
-    }))
 }
 
 /// Parses all MCP servers from a Droid config JSON.
@@ -313,26 +155,13 @@ fn parse_stdio_server(obj: &serde_json::Map<String, serde_json::Value>) -> Resul
 /// # Errors
 /// Returns an error if the JSON is malformed.
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
-    let servers_obj = config
-        .get("mcpServers")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Droid".to_string(),
-            reason: "Config missing 'mcpServers' object".to_string(),
-        })?;
-
-    let mut result = Vec::new();
-    for (name, value) in servers_obj {
-        let server = parse_mcp_server(value)?;
-        result.push((name.clone(), server));
-    }
-
-    Ok(result)
+    mcp_parse::parse_servers_from_key(config, "mcpServers", &ParseConfig::DROID, parse_mcp_server)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]

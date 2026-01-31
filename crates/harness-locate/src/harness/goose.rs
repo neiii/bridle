@@ -4,13 +4,14 @@
 //! - **Global**: `~/.config/goose/`
 //! - **Project**: `.goose/` in project root (if exists)
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, SseMcpServer, StdioMcpServer};
+use crate::mcp::McpServer;
 use crate::platform;
-use crate::types::{EnvValue, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Returns the global Goose configuration directory.
 ///
@@ -108,10 +109,11 @@ pub fn is_installed() -> bool {
 /// Returns an error if the JSON is malformed or missing required fields.
 #[allow(dead_code)] // Internal utility for future MCP config reading
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::GOOSE;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Goose".into(),
+            harness: config.harness_name.into(),
             reason: "Server config must be an object".into(),
         })?;
 
@@ -119,152 +121,16 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
         obj.get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Goose".into(),
+                harness: config.harness_name.into(),
                 reason: "Missing 'type' field".into(),
             })?;
 
-    let enabled = obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-
-    let timeout_ms = if let Some(timeout_value) = obj.get("timeout") {
-        let seconds = timeout_value
-            .as_u64()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Goose".into(),
-                reason: "'timeout' must be a number".into(),
-            })?;
-        Some(
-            seconds
-                .checked_mul(1000)
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Goose".into(),
-                    reason: "timeout value too large".into(),
-                })?,
-        )
-    } else {
-        None
-    };
-
     match server_type {
-        "stdio" => {
-            let command = obj
-                .get("cmd")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Goose".into(),
-                    reason: "Missing 'cmd' field".into(),
-                })?
-                .to_string();
-
-            let args = if let Some(args_value) = obj.get("args") {
-                let arr = args_value
-                    .as_array()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Goose".into(),
-                        reason: "'args' must be an array".into(),
-                    })?;
-                arr.iter()
-                    .enumerate()
-                    .map(|(i, v)| {
-                        v.as_str()
-                            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                                harness: "Goose".into(),
-                                reason: format!("args[{}] must be a string", i),
-                            })
-                            .map(String::from)
-                    })
-                    .collect::<Result<Vec<_>>>()?
-            } else {
-                Vec::new()
-            };
-
-            let env = if let Some(envs_value) = obj.get("envs") {
-                let env_obj =
-                    envs_value
-                        .as_object()
-                        .ok_or_else(|| Error::UnsupportedMcpConfig {
-                            harness: "Goose".into(),
-                            reason: "'envs' must be an object".into(),
-                        })?;
-                let mut env_map = HashMap::new();
-                for (k, v) in env_obj {
-                    let value_str = v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Goose".into(),
-                        reason: format!("envs.{} must be a string", k),
-                    })?;
-                    env_map.insert(k.clone(), EnvValue::plain(value_str));
-                }
-                env_map
-            } else {
-                HashMap::new()
-            };
-
-            Ok(McpServer::Stdio(StdioMcpServer {
-                command,
-                args,
-                env,
-                cwd: None,
-                enabled,
-                timeout_ms,
-            }))
-        }
-        "sse" => {
-            let url = obj
-                .get("uri")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Goose".into(),
-                    reason: "Missing 'uri' field".into(),
-                })?
-                .to_string();
-
-            Ok(McpServer::Sse(SseMcpServer {
-                url,
-                headers: HashMap::new(),
-                enabled,
-                timeout_ms,
-            }))
-        }
-        "streamable_http" => {
-            let url = obj
-                .get("uri")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Goose".into(),
-                    reason: "Missing 'uri' field".into(),
-                })?
-                .to_string();
-
-            let headers = if let Some(headers_value) = obj.get("headers") {
-                let headers_obj =
-                    headers_value
-                        .as_object()
-                        .ok_or_else(|| Error::UnsupportedMcpConfig {
-                            harness: "Goose".into(),
-                            reason: "'headers' must be an object".into(),
-                        })?;
-                let mut headers_map = HashMap::new();
-                for (k, v) in headers_obj {
-                    let value_str = v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Goose".into(),
-                        reason: format!("headers.{} must be a string", k),
-                    })?;
-                    headers_map.insert(k.clone(), EnvValue::plain(value_str));
-                }
-                headers_map
-            } else {
-                HashMap::new()
-            };
-
-            Ok(McpServer::Http(HttpMcpServer {
-                url,
-                headers,
-                oauth: None,
-                enabled,
-                timeout_ms,
-            }))
-        }
+        "stdio" => mcp_parse::parse_stdio_server(obj, &config),
+        "sse" => mcp_parse::parse_sse_server(obj, &config),
+        "streamable_http" => mcp_parse::parse_http_server(obj, &config),
         _ => Err(Error::UnsupportedMcpConfig {
-            harness: "Goose".into(),
+            harness: config.harness_name.into(),
             reason: format!("Unknown server type: {}", server_type),
         }),
     }
@@ -279,30 +145,13 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
 /// Returns an error if the JSON is malformed.
 #[allow(dead_code)] // Internal utility for future MCP config reading
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
-    let extensions = config
-        .get("extensions")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Goose".into(),
-            reason: "Missing 'extensions' key".into(),
-        })?;
-
-    let mut servers = Vec::new();
-
-    for (name, server_config) in extensions {
-        let server = parse_mcp_server(server_config).map_err(|e| Error::UnsupportedMcpConfig {
-            harness: "Goose".into(),
-            reason: format!("server '{}': {}", name, e),
-        })?;
-        servers.push((name.clone(), server));
-    }
-
-    Ok(servers)
+    mcp_parse::parse_servers_from_key(config, "extensions", &ParseConfig::GOOSE, parse_mcp_server)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]

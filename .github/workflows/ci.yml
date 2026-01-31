@@ -171,6 +171,4 @@ jobs:
       - name: Install jscpd
         run: bun install -g jscpd
       - name: Check for duplicate code
-        # Threshold raised to 15% to accommodate harness-locate library which has
-        # intentionally similar implementations across different harness backends
-        run: jscpd crates --reporters console --threshold 15
+        run: jscpd crates --reporters console --threshold 12

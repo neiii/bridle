@@ -4,13 +4,14 @@
 //! - **Global**: `~/.config/crush/`
 //! - **Project**: `.crush/` in project root (if exists)
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, SseMcpServer, StdioMcpServer};
+use crate::mcp::McpServer;
 use crate::platform;
-use crate::types::{EnvValue, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Returns the global Crush configuration directory.
 ///
@@ -110,10 +111,11 @@ pub fn is_installed() -> bool {
 /// # Errors
 /// Returns an error if the JSON is malformed or missing required fields.
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::CRUSH;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Crush".into(),
+            harness: config.harness_name.into(),
             reason: "Server config must be an object".into(),
         })?;
 
@@ -121,159 +123,16 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
         obj.get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "Crush".into(),
+                harness: config.harness_name.into(),
                 reason: "Missing 'type' field".into(),
             })?;
 
-    let disabled = obj
-        .get("disabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let enabled = !disabled;
-
-    let timeout_ms = obj.get("timeout_ms").and_then(|v| v.as_u64());
-
     match server_type {
-        "stdio" => {
-            let command = obj
-                .get("command")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Crush".into(),
-                    reason: "Missing 'command' field".into(),
-                })?
-                .to_string();
-
-            let args = if let Some(args_value) = obj.get("args") {
-                let arr = args_value
-                    .as_array()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Crush".into(),
-                        reason: "'args' must be an array".into(),
-                    })?;
-                arr.iter()
-                    .enumerate()
-                    .map(|(i, v)| {
-                        v.as_str()
-                            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                                harness: "Crush".into(),
-                                reason: format!("args[{}] must be a string", i),
-                            })
-                            .map(String::from)
-                    })
-                    .collect::<Result<Vec<_>>>()?
-            } else {
-                Vec::new()
-            };
-
-            let env = if let Some(env_value) = obj.get("env") {
-                let env_obj = env_value
-                    .as_object()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Crush".into(),
-                        reason: "'env' must be an object".into(),
-                    })?;
-                let mut env_map = HashMap::new();
-                for (k, v) in env_obj {
-                    let value_str = v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Crush".into(),
-                        reason: format!("env.{} must be a string", k),
-                    })?;
-                    env_map.insert(k.clone(), EnvValue::plain(value_str));
-                }
-                env_map
-            } else {
-                HashMap::new()
-            };
-
-            Ok(McpServer::Stdio(StdioMcpServer {
-                command,
-                args,
-                env,
-                cwd: None,
-                enabled,
-                timeout_ms,
-            }))
-        }
-        "http" => {
-            let url = obj
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Crush".into(),
-                    reason: "Missing 'url' field".into(),
-                })?
-                .to_string();
-
-            let headers = if let Some(headers_value) = obj.get("headers") {
-                let headers_obj =
-                    headers_value
-                        .as_object()
-                        .ok_or_else(|| Error::UnsupportedMcpConfig {
-                            harness: "Crush".into(),
-                            reason: "'headers' must be an object".into(),
-                        })?;
-                let mut headers_map = HashMap::new();
-                for (k, v) in headers_obj {
-                    let value_str = v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Crush".into(),
-                        reason: format!("headers.{} must be a string", k),
-                    })?;
-                    headers_map.insert(k.clone(), EnvValue::plain(value_str));
-                }
-                headers_map
-            } else {
-                HashMap::new()
-            };
-
-            Ok(McpServer::Http(HttpMcpServer {
-                url,
-                headers,
-                oauth: None,
-                enabled,
-                timeout_ms,
-            }))
-        }
-        "sse" => {
-            let url = obj
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::UnsupportedMcpConfig {
-                    harness: "Crush".into(),
-                    reason: "Missing 'url' field".into(),
-                })?
-                .to_string();
-
-            let headers = if let Some(headers_value) = obj.get("headers") {
-                let headers_obj =
-                    headers_value
-                        .as_object()
-                        .ok_or_else(|| Error::UnsupportedMcpConfig {
-                            harness: "Crush".into(),
-                            reason: "'headers' must be an object".into(),
-                        })?;
-                let mut headers_map = HashMap::new();
-                for (k, v) in headers_obj {
-                    let value_str = v.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "Crush".into(),
-                        reason: format!("headers.{} must be a string", k),
-                    })?;
-                    headers_map.insert(k.clone(), EnvValue::plain(value_str));
-                }
-                headers_map
-            } else {
-                HashMap::new()
-            };
-
-            Ok(McpServer::Sse(SseMcpServer {
-                url,
-                headers,
-                enabled,
-                timeout_ms,
-            }))
-        }
+        "stdio" => mcp_parse::parse_stdio_server(obj, &config),
+        "http" => mcp_parse::parse_http_server(obj, &config),
+        "sse" => mcp_parse::parse_sse_server(obj, &config),
         _ => Err(Error::UnsupportedMcpConfig {
-            harness: "Crush".into(),
+            harness: config.harness_name.into(),
             reason: format!("Unknown server type: {}", server_type),
         }),
     }
@@ -289,30 +148,13 @@ pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
 /// # Errors
 /// Returns an error if the JSON is malformed.
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
-    let mcp = config
-        .get("mcp")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "Crush".into(),
-            reason: "Missing 'mcp' key".into(),
-        })?;
-
-    let mut servers = Vec::new();
-
-    for (name, server_config) in mcp {
-        let server = parse_mcp_server(server_config).map_err(|e| Error::UnsupportedMcpConfig {
-            harness: "Crush".into(),
-            reason: format!("server '{}': {}", name, e),
-        })?;
-        servers.push((name.clone(), server));
-    }
-
-    Ok(servers)
+    mcp_parse::parse_servers_from_key(config, "mcp", &ParseConfig::CRUSH, parse_mcp_server)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]

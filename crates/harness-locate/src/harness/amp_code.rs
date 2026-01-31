@@ -6,13 +6,14 @@
 //!
 //! Note: Skills are shared with Goose at `~/.config/agents/skills/`.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
-use crate::mcp::{HttpMcpServer, McpServer, SseMcpServer, StdioMcpServer};
+use crate::mcp::McpServer;
 use crate::platform;
-use crate::types::{EnvValue, HarnessKind, Scope};
+use crate::types::Scope;
+
+use super::mcp_parse::{self, ParseConfig};
 
 /// Returns the global AMP Code configuration directory.
 ///
@@ -122,186 +123,45 @@ pub fn is_installed() -> bool {
 /// Returns an error if the JSON is malformed or missing required fields.
 #[allow(dead_code)]
 pub(crate) fn parse_mcp_server(name: &str, value: &serde_json::Value) -> Result<McpServer> {
+    let config = ParseConfig::AMP_CODE;
     let obj = value
         .as_object()
         .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
+            harness: config.harness_name.to_string(),
             reason: "Server configuration must be an object".to_string(),
         })?;
 
     if let Some(server_type) = obj.get("type").and_then(|v| v.as_str()) {
         match server_type {
-            "sse" => parse_sse_server(obj),
-            "http" => parse_http_server(obj),
-            "stdio" => parse_stdio_server(obj),
+            "sse" => mcp_parse::parse_sse_server(obj, &config),
+            "http" => mcp_parse::parse_http_server(obj, &config),
+            "stdio" => mcp_parse::parse_stdio_server(obj, &config),
             _ => Err(Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
+                harness: config.harness_name.to_string(),
                 reason: format!("Unknown server type: {}", server_type),
             }),
         }
     } else if obj.contains_key("url") && obj.contains_key("command") {
         Err(Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
+            harness: config.harness_name.to_string(),
             reason: format!(
                 "Server '{}' has both 'command' and 'url' fields - specify 'type' to disambiguate",
                 name
             ),
         })
     } else if obj.contains_key("url") {
-        parse_http_server(obj)
+        mcp_parse::parse_http_server(obj, &config)
     } else if obj.contains_key("command") {
-        parse_stdio_server(obj)
+        mcp_parse::parse_stdio_server(obj, &config)
     } else {
         Err(Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
+            harness: config.harness_name.to_string(),
             reason: format!(
                 "Server '{}' has neither 'command' (stdio) nor 'url' (http) field",
                 name
             ),
         })
     }
-}
-
-#[allow(dead_code)]
-fn parse_stdio_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let command = obj
-        .get("command")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
-            reason: "Stdio server missing 'command' field".to_string(),
-        })?
-        .to_string();
-
-    let args = if let Some(args_value) = obj.get("args") {
-        let arr = args_value
-            .as_array()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: "'args' must be an array".to_string(),
-            })?;
-        arr.iter()
-            .enumerate()
-            .map(|(i, v)| {
-                v.as_str()
-                    .ok_or_else(|| Error::UnsupportedMcpConfig {
-                        harness: "AMP Code".to_string(),
-                        reason: format!("args[{}] must be a string", i),
-                    })
-                    .map(String::from)
-            })
-            .collect::<Result<Vec<_>>>()?
-    } else {
-        Vec::new()
-    };
-
-    let mut env = HashMap::new();
-    if let Some(env_value) = obj.get("env") {
-        let env_obj = env_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: "'env' must be an object".to_string(),
-            })?;
-        for (key, value) in env_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: format!("Environment variable '{}' must be a string", key),
-            })?;
-            env.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::AmpCode),
-            );
-        }
-    }
-
-    Ok(McpServer::Stdio(StdioMcpServer {
-        command,
-        args,
-        env,
-        cwd: None,
-        enabled: true,
-        timeout_ms: None,
-    }))
-}
-
-#[allow(dead_code)]
-fn parse_sse_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let url = obj
-        .get("url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
-            reason: "SSE server missing 'url' field".to_string(),
-        })?
-        .to_string();
-
-    let mut headers = HashMap::new();
-    if let Some(headers_value) = obj.get("headers") {
-        let headers_obj = headers_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: "'headers' must be an object".to_string(),
-            })?;
-        for (key, value) in headers_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: format!("Header '{}' must be a string", key),
-            })?;
-            headers.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::AmpCode),
-            );
-        }
-    }
-
-    Ok(McpServer::Sse(SseMcpServer {
-        url,
-        headers,
-        enabled: true,
-        timeout_ms: None,
-    }))
-}
-
-#[allow(dead_code)]
-fn parse_http_server(obj: &serde_json::Map<String, serde_json::Value>) -> Result<McpServer> {
-    let url = obj
-        .get("url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::UnsupportedMcpConfig {
-            harness: "AMP Code".to_string(),
-            reason: "HTTP server missing 'url' field".to_string(),
-        })?
-        .to_string();
-
-    let mut headers = HashMap::new();
-    if let Some(headers_value) = obj.get("headers") {
-        let headers_obj = headers_value
-            .as_object()
-            .ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: "'headers' must be an object".to_string(),
-            })?;
-        for (key, value) in headers_obj {
-            let value_str = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
-                harness: "AMP Code".to_string(),
-                reason: format!("Header '{}' must be a string", key),
-            })?;
-            headers.insert(
-                key.clone(),
-                EnvValue::from_native(value_str, HarnessKind::AmpCode),
-            );
-        }
-    }
-
-    Ok(McpServer::Http(HttpMcpServer {
-        url,
-        headers,
-        oauth: None,
-        enabled: true,
-        timeout_ms: None,
-    }))
 }
 
 /// Parses all MCP servers from an AMP settings.json config.
@@ -323,18 +183,19 @@ pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(Strin
         return Ok(vec![]);
     };
 
-    let mut result = Vec::new();
-    for (name, value) in servers_obj {
-        let server = parse_mcp_server(name, value)?;
-        result.push((name.clone(), server));
-    }
-
-    Ok(result)
+    servers_obj
+        .iter()
+        .map(|(name, value)| {
+            let server = parse_mcp_server(name, value)?;
+            Ok((name.clone(), server))
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EnvValue;
     use serde_json::json;
 
     #[test]
