@@ -157,3 +157,16 @@ jobs:
             grep -rn --include="*.rs" -E "(TODO|FIXME|HACK|XXX)" . 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
+
+  duplicate-code:
+    name: Duplicate Code Detection
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install jscpd
+        run: bun install -g jscpd
+      - name: Check for duplicate code
+        run: jscpd crates --reporters console --threshold 5
