@@ -38,7 +38,7 @@ chrono = { version = "0.4", features = ["serde"] }
 textwrap = "0.16"
 
 # TUI
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 colored = "3.0.0"
 
