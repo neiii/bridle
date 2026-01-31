@@ -41,8 +41,10 @@ impl GitHubRef {
     }
 
     pub fn archive_url(&self) -> String {
+        // Use /{ref}.zip format which works for branches, tags, and commit SHAs
+        // This is more universal than refs/heads/ or refs/tags/ specific paths
         format!(
-            "https://github.com/{}/{}/archive/refs/heads/{}.zip",
+            "https://github.com/{}/{}/archive/{}.zip",
             self.owner, self.repo, self.git_ref
         )
     }
@@ -111,7 +113,7 @@ mod tests {
         };
         assert_eq!(
             gh.archive_url(),
-            "https://github.com/anthropics/claude-code/archive/refs/heads/main.zip"
+            "https://github.com/anthropics/claude-code/archive/main.zip"
         );
     }
 

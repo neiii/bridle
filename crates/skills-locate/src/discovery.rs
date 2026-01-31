@@ -167,7 +167,16 @@ fn discover_single_plugin(
 pub fn discover_from_source(source: &PluginSource) -> Result<Vec<PluginDescriptor>> {
     match source {
         PluginSource::GitHub { github } => discover_plugins(github),
-        PluginSource::Url { url } => discover_plugins(url),
+        PluginSource::Url { url } => {
+            // Check if this is actually a GitHub URL
+            if url.contains("github.com/") {
+                discover_plugins(url)
+            } else {
+                Err(Error::NotFound(format!(
+                    "URL-based plugin discovery is only supported for GitHub URLs: {url}"
+                )))
+            }
+        }
         PluginSource::Relative(_) => Err(Error::NotFound(
             "Cannot discover from relative path without base URL".to_string(),
         )),

@@ -41,9 +41,12 @@ jobs:
       - name: Publish harness-locate first (if publishing skills-locate)
         if: steps.crate.outputs.name == 'skills-locate'
         run: |
-          echo "Checking if harness-locate needs to be published first..."
-          # skills-locate depends on harness-locate, ensure it's available
-          cargo publish --dry-run -p harness-locate || true
+          echo "Publishing harness-locate first (skills-locate depends on it)..."
+          # skills-locate depends on harness-locate, publish it first if needed
+          # This may fail if harness-locate version is already published, which is fine
+          cargo publish -p harness-locate --no-verify || echo "harness-locate already published or unchanged"
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish ${{ steps.crate.outputs.name }}
         run: cargo publish -p ${{ steps.crate.outputs.name }}
