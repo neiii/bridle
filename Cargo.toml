@@ -33,7 +33,7 @@ color-eyre = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
 textwrap = "0.16"
 home = "0.5"
-which = "7"
+which = "8"
 url = "2"
 regex = "1"
 ureq = "3"
