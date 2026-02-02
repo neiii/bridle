@@ -693,7 +693,7 @@ mod tests {
             .map(|l| {
                 l.spans
                     .iter()
-                    .map(|s| s.content.as_ref())
+                    .map(|s| s.content.as_ref() as &str)
                     .collect::<String>()
             })
             .collect();
