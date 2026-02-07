@@ -160,7 +160,7 @@ view = "Dashboard"      # Will add more later :P
 | Claude Code | `~/.claude/`            | Full support |
 | OpenCode    | `~/.config/opencode/`   | Full support |
 | Goose       | `~/.config/goose/`      | Full support |
-| Amp         | `~/.amp/`               | Experimental (ish) |
+| Amp         | `~/.config/amp/`        | Experimental (ish) |
 | Copilot CLI | `~/.copilot/`           | Full support |
 | Crush       | `~/.config/crush/`      | Full support (skills + MCP) |
 
