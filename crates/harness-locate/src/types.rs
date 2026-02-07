@@ -31,6 +31,8 @@ pub enum HarnessKind {
     Crush,
     /// Factory Droid (Factory's AI coding assistant)
     Droid,
+    /// Gemini CLI (Google's AI coding assistant)
+    GeminiCli,
 }
 
 impl fmt::Display for HarnessKind {
@@ -43,6 +45,7 @@ impl fmt::Display for HarnessKind {
             Self::CopilotCli => write!(f, "Copilot CLI"),
             Self::Crush => write!(f, "Crush"),
             Self::Droid => write!(f, "Droid"),
+            Self::GeminiCli => write!(f, "Gemini CLI"),
         }
     }
 }
@@ -58,6 +61,7 @@ impl HarnessKind {
             Self::CopilotCli => "Copilot CLI",
             Self::Crush => "Crush",
             Self::Droid => "Droid",
+            Self::GeminiCli => "Gemini CLI",
         }
     }
 
@@ -83,6 +87,7 @@ impl HarnessKind {
         Self::CopilotCli,
         Self::Crush,
         Self::Droid,
+        Self::GeminiCli,
     ];
 
     /// Returns the known CLI binary names for this harness.
@@ -109,6 +114,7 @@ impl HarnessKind {
             Self::CopilotCli => &["copilot"],
             Self::Crush => &["crush"],
             Self::Droid => &["droid"],
+            Self::GeminiCli => &["gemini"],
         }
     }
 
@@ -177,6 +183,8 @@ impl HarnessKind {
             (Self::Droid, ResourceKind::Skills) => Some(&["skills"]),
             (Self::Droid, ResourceKind::Commands) => Some(&["commands"]),
             (Self::Droid, ResourceKind::Agents) => Some(&["droids"]),
+
+            // GeminiCli - no resource directory support
 
             // Unsupported combinations
             _ => None,
@@ -540,7 +548,8 @@ impl EnvValue {
                 HarnessKind::ClaudeCode
                 | HarnessKind::AmpCode
                 | HarnessKind::CopilotCli
-                | HarnessKind::Droid => {
+                | HarnessKind::Droid
+                | HarnessKind::GeminiCli => {
                     format!("${{{env}}}")
                 }
                 HarnessKind::OpenCode | HarnessKind::Crush => format!("{{env:{env}}}"),
@@ -586,7 +595,8 @@ impl EnvValue {
                 HarnessKind::ClaudeCode
                 | HarnessKind::AmpCode
                 | HarnessKind::CopilotCli
-                | HarnessKind::Droid => Ok(format!("${{{env}}}")),
+                | HarnessKind::Droid
+                | HarnessKind::GeminiCli => Ok(format!("${{{env}}}")),
                 HarnessKind::OpenCode | HarnessKind::Crush => Ok(format!("{{env:{env}}}")),
                 HarnessKind::Goose => std::env::var(env)
                     .map_err(|_| crate::Error::MissingEnvVar { name: env.clone() }),
@@ -628,7 +638,8 @@ impl EnvValue {
             HarnessKind::ClaudeCode
             | HarnessKind::AmpCode
             | HarnessKind::CopilotCli
-            | HarnessKind::Droid => {
+            | HarnessKind::Droid
+            | HarnessKind::GeminiCli => {
                 if let Some(var) = s.strip_prefix("${").and_then(|s| s.strip_suffix('}')) {
                     Self::EnvRef {
                         env: var.to_string(),
@@ -994,10 +1005,18 @@ mod tests {
     #[test]
     fn directory_names_all_harnesses_support_skills() {
         for kind in HarnessKind::ALL {
-            assert!(
-                kind.directory_names(ResourceKind::Skills).is_some(),
-                "{kind} should support skills"
-            );
+            // GeminiCli doesn't support skills directories
+            if *kind == HarnessKind::GeminiCli {
+                assert!(
+                    kind.directory_names(ResourceKind::Skills).is_none(),
+                    "{kind} should not support skills"
+                );
+            } else {
+                assert!(
+                    kind.directory_names(ResourceKind::Skills).is_some(),
+                    "{kind} should support skills"
+                );
+            }
         }
     }
 }

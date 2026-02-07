@@ -180,7 +180,7 @@ impl AgentCapabilities {
                 color_format: ColorFormat::NamedOrHex,
                 supported_modes: &["subagent", "primary"],
             }),
-            HarnessKind::Goose | HarnessKind::Crush => None,
+            HarnessKind::Goose | HarnessKind::Crush | HarnessKind::GeminiCli => None,
         }
     }
 }
@@ -226,7 +226,7 @@ impl SkillCapabilities {
                 name_must_match_directory: true,
                 description_required: true,
             }),
-            HarnessKind::Goose => None,
+            HarnessKind::Goose | HarnessKind::GeminiCli => None,
             HarnessKind::Crush => Some(Self {
                 name_format: NameFormat::Any,
                 name_must_match_directory: false,
@@ -980,7 +980,7 @@ mod tests {
     // Harness-specific validation tests
 
     #[test]
-    fn cwd_on_any_harness_returns_error() {
+    fn cwd_unsupported_on_non_gemini_harnesses() {
         let server = McpServer::Stdio(StdioMcpServer {
             command: "node".to_string(),
             args: vec![],
@@ -992,7 +992,11 @@ mod tests {
 
         for kind in HarnessKind::ALL {
             let issues = validate_for_harness(&server, *kind);
-            assert!(issues.iter().any(|i| i.code == Some(CODE_CWD_UNSUPPORTED)));
+            if *kind == HarnessKind::GeminiCli {
+                assert!(!issues.iter().any(|i| i.code == Some(CODE_CWD_UNSUPPORTED)));
+            } else {
+                assert!(issues.iter().any(|i| i.code == Some(CODE_CWD_UNSUPPORTED)));
+            }
         }
     }
 
