@@ -45,7 +45,7 @@ crossterm = "0.29"
 colored = "3.0.0"
 
 # Dev dependencies
-tempfile = "3.25.0"
+tempfile = "3.26.0"
 assert_cmd = "2.0"
 predicates = "3.1"
 
