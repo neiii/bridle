@@ -44,6 +44,7 @@ fn get_profile_config_path(profile_dir: &Path, harness_kind: HarnessKind) -> Pat
         HarnessKind::CopilotCli => profile_dir.join("mcp-config.json"),
         HarnessKind::Crush => profile_dir.join("crush.json"),
         HarnessKind::Droid => profile_dir.join("mcp.json"),
+        HarnessKind::GrokBuild => profile_dir.join("config.toml"),
         _ => profile_dir.join("config.json"),
     }
 }

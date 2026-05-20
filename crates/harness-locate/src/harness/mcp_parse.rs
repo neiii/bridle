@@ -92,6 +92,19 @@ impl ParseConfig {
     };
 
     /// Droid style parsing config.
+    pub const GROK_BUILD: Self = Self {
+        harness_name: "Grok Build",
+        harness_kind: HarnessKind::GrokBuild,
+        args_field: "args",
+        env_field: "env",
+        command_field: "command",
+        url_field: "url",
+        plain_env_values: false,
+        disabled_field: Some("disabled"),
+        timeout_field: "timeout",
+        timeout_in_seconds: false,
+    };
+
     pub const DROID: Self = Self {
         harness_name: "Droid",
         harness_kind: HarnessKind::Droid,

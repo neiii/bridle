@@ -61,6 +61,7 @@ impl HarnessConfig for harness_locate::Harness {
             harness_locate::HarnessKind::CopilotCli => "copilot-cli",
             harness_locate::HarnessKind::Crush => "crush",
             harness_locate::HarnessKind::Droid => "droid",
+            harness_locate::HarnessKind::GrokBuild => "grok-build",
             _ => "unknown",
         }
     }

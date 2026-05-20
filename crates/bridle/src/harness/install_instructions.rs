@@ -9,6 +9,7 @@ pub fn get_install_instructions(kind: HarnessKind) -> Vec<String> {
         HarnessKind::CopilotCli => copilot_cli_instructions(),
         HarnessKind::Crush => crush_instructions(),
         HarnessKind::Droid => droid_instructions(),
+        HarnessKind::GrokBuild => grok_build_instructions(),
         _ => vec!["Unknown harness".to_string()],
     }
 }
@@ -38,6 +39,15 @@ fn crush_instructions() -> Vec<String> {
     vec![
         "- Visit https://charm.sh/crush for installation instructions".to_string(),
         "- brew install charmbracelet/tap/crush".to_string(),
+    ]
+}
+
+fn grok_build_instructions() -> Vec<String> {
+    vec![
+        "Install Grok Build:".to_string(),
+        "- macOS/Linux: curl -fsSL https://x.ai/cli/install.sh | bash".to_string(),
+        "- Then run: grok".to_string(),
+        "- For headless/non-browser use: export XAI_API_KEY=\"xai-...\"".to_string(),
     ]
 }
 
@@ -143,6 +153,7 @@ pub fn get_empty_state_message(
         HarnessKind::CopilotCli => "Copilot CLI",
         HarnessKind::Crush => "Crush",
         HarnessKind::Droid => "Factory Droid",
+        HarnessKind::GrokBuild => "Grok Build",
         _ => "Unknown",
     };
 
@@ -192,6 +203,7 @@ pub fn get_empty_state_message(
                 HarnessKind::CopilotCli => "copilot",
                 HarnessKind::Crush => "crush",
                 HarnessKind::Droid => "droid",
+                HarnessKind::GrokBuild => "grok",
                 _ => "<unknown>",
             };
 
