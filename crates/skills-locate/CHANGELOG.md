@@ -5,6 +5,13 @@ All notable changes to `skills-locate` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/neiii/bridle/compare/skills-locate-v0.3.0...skills-locate-v0.4.0) (2026-05-20)
+
+
+### Features
+
+* merge harness-locate and skills-locate into workspace ([#46](https://github.com/neiii/bridle/issues/46)) ([fc3b642](https://github.com/neiii/bridle/commit/fc3b642b1c297b232827424b130d7b57685cda46))
+
 ## [Unreleased]
 
 ## [0.2.1] - 2026-01-16
