@@ -15,7 +15,7 @@ jobs:
       bridle-release-created: ${{ steps.release.outputs['crates/bridle--release_created'] }}
       bridle-version: ${{ steps.release.outputs['crates/bridle--version'] }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: .github/release-please-config.json
