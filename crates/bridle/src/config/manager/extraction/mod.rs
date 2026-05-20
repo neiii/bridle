@@ -253,7 +253,11 @@ fn extract_mcp_from_ampcode_config(profile_path: &Path) -> Result<Vec<McpServerI
     let config: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| Error::Config(format!("Failed to parse settings.json: {}", e)))?;
 
-    let mcp_obj = match config.get("amp.mcpServers").and_then(|v| v.as_object()) {
+    let mcp_obj = match config
+        .get("amp.mcpServers")
+        .or_else(|| config.get("amp").and_then(|v| v.get("mcpServers")))
+        .and_then(|v| v.as_object())
+    {
         Some(obj) => obj,
         None => return Ok(Vec::new()),
     };
@@ -271,10 +275,23 @@ fn extract_mcp_from_ampcode_config(profile_path: &Path) -> Result<Vec<McpServerI
                     .collect()
             });
             let url = value.get("url").and_then(|v| v.as_str()).map(String::from);
+            let server_type = value
+                .get("type")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .or_else(|| {
+                    if url.is_some() {
+                        Some("http".to_string())
+                    } else if command.is_some() {
+                        Some("stdio".to_string())
+                    } else {
+                        None
+                    }
+                });
             McpServerInfo {
                 name: name.clone(),
                 enabled: true,
-                server_type: Some("stdio".to_string()),
+                server_type,
                 command,
                 args,
                 url,
@@ -316,6 +333,7 @@ pub fn extract_theme(harness: &dyn HarnessConfig, profile_path: &Path) -> Option
             parsed
                 .get("amp.theme")
                 .and_then(|v| v.as_str())
+                .or_else(|| parsed.get("amp.terminal.theme").and_then(|v| v.as_str()))
                 .map(String::from)
         }
         "claude-code" => {

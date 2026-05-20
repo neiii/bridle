@@ -4,6 +4,7 @@
 //! to reduce code duplication when parsing MCP server configurations from JSON.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 use crate::mcp::{HttpMcpServer, McpServer, OAuthConfig, SseMcpServer, StdioMcpServer};
@@ -32,6 +33,8 @@ pub struct ParseConfig {
     pub timeout_field: &'static str,
     /// Whether timeout is in seconds (needs conversion to ms).
     pub timeout_in_seconds: bool,
+    /// Field name for working directory, if supported.
+    pub cwd_field: Option<&'static str>,
 }
 
 impl ParseConfig {
@@ -47,6 +50,7 @@ impl ParseConfig {
         disabled_field: None,
         timeout_field: "timeout",
         timeout_in_seconds: false,
+        cwd_field: None,
     };
 
     /// OpenCode style parsing config.
@@ -61,6 +65,7 @@ impl ParseConfig {
         disabled_field: None,
         timeout_field: "timeout",
         timeout_in_seconds: false,
+        cwd_field: None,
     };
 
     /// Goose style parsing config.
@@ -75,6 +80,7 @@ impl ParseConfig {
         disabled_field: None,
         timeout_field: "timeout",
         timeout_in_seconds: true,
+        cwd_field: None,
     };
 
     /// Crush style parsing config.
@@ -89,6 +95,7 @@ impl ParseConfig {
         disabled_field: Some("disabled"),
         timeout_field: "timeout_ms",
         timeout_in_seconds: false,
+        cwd_field: None,
     };
 
     /// Droid style parsing config.
@@ -103,6 +110,7 @@ impl ParseConfig {
         disabled_field: Some("disabled"),
         timeout_field: "timeout",
         timeout_in_seconds: false,
+        cwd_field: None,
     };
 
     /// AMP Code style parsing config.
@@ -117,6 +125,22 @@ impl ParseConfig {
         disabled_field: None,
         timeout_field: "timeout",
         timeout_in_seconds: false,
+        cwd_field: None,
+    };
+
+    /// Gemini CLI style parsing config.
+    pub const GEMINI_CLI: Self = Self {
+        harness_name: "Gemini CLI",
+        harness_kind: HarnessKind::GeminiCli,
+        args_field: "args",
+        env_field: "env",
+        command_field: "command",
+        url_field: "url",
+        plain_env_values: false,
+        disabled_field: None,
+        timeout_field: "timeout",
+        timeout_in_seconds: false,
+        cwd_field: Some("cwd"),
     };
 
     /// Copilot CLI style parsing config.
@@ -131,6 +155,7 @@ impl ParseConfig {
         disabled_field: None,
         timeout_field: "timeout",
         timeout_in_seconds: false,
+        cwd_field: None,
     };
 }
 
@@ -230,6 +255,23 @@ pub fn parse_timeout(
     }
 }
 
+fn parse_cwd(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    harness: &str,
+) -> Result<Option<PathBuf>> {
+    let Some(value) = obj.get(field) else {
+        return Ok(None);
+    };
+
+    let raw = value.as_str().ok_or_else(|| Error::UnsupportedMcpConfig {
+        harness: harness.to_string(),
+        reason: format!("'{}' must be a string", field),
+    })?;
+
+    Ok(Some(PathBuf::from(raw)))
+}
+
 /// Parse enabled/disabled flag from JSON object.
 pub fn parse_enabled(
     obj: &serde_json::Map<String, serde_json::Value>,
@@ -270,13 +312,17 @@ pub fn parse_stdio_server(
         config.timeout_in_seconds,
         config.harness_name,
     )?;
+    let cwd = match config.cwd_field {
+        Some(field) => parse_cwd(obj, field, config.harness_name)?,
+        None => None,
+    };
     let enabled = parse_enabled(obj, config.disabled_field);
 
     Ok(McpServer::Stdio(StdioMcpServer {
         command,
         args,
         env,
-        cwd: None,
+        cwd,
         enabled,
         timeout_ms,
     }))
