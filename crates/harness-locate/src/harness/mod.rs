@@ -14,6 +14,7 @@ pub mod amp_code;
 pub mod claude_code;
 pub mod copilot_cli;
 pub mod crush;
+pub(crate) mod dot_dir;
 pub mod droid;
 pub mod goose;
 pub mod grok_build;
