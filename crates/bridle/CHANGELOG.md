@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/neiii/bridle/compare/bridle-v0.2.9...bridle-v0.3.0) (2026-05-20)
+
+
+### Features
+
+* improve agent readiness with CI enhancements and templates ([#38](https://github.com/neiii/bridle/issues/38)) ([c69863e](https://github.com/neiii/bridle/commit/c69863ec900488c80582d7848651109023a80ee9))
+
+
+### Bug Fixes
+
+* use explicit version in bridle Cargo.toml for release-please ([#48](https://github.com/neiii/bridle/issues/48)) ([0d2a94b](https://github.com/neiii/bridle/commit/0d2a94bc9a425a46a8f5348c06d328d597873cb8))
+* use local changelog path for bridle crate ([#47](https://github.com/neiii/bridle/issues/47)) ([957247b](https://github.com/neiii/bridle/commit/957247b22e90257627c92445f558fb4aedcff391))
+
 ## [0.2.8] - 2026-01-20
 
 ### Added
