@@ -16,7 +16,7 @@ harness-locate = { path = "crates/harness-locate" }
 skills-locate = { path = "crates/skills-locate" }
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 dialoguer-multiselect = "0.13.2"
 
 # Serialization
