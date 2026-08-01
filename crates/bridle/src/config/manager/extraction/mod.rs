@@ -109,6 +109,7 @@ pub fn extract_mcp_servers(
         "amp-code" => extract_mcp_from_ampcode_config(profile_path),
         "claude-code" => extract_mcp_from_claudecode_config(profile_path),
         "goose" => extract_mcp_from_goose_config(profile_path),
+        "grok-build" => extract_mcp_from_grok_build_config(profile_path),
         _ => extract_mcp_generic(harness, profile_path),
     }
 }
@@ -140,6 +141,59 @@ fn extract_mcp_generic(
             url: None,
         })
         .collect())
+}
+
+fn extract_mcp_from_grok_build_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
+    let config_path = profile_path.join("config.toml");
+    if !config_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| Error::Config(format!("Failed to read config.toml: {}", e)))?;
+    let config: toml::Value = toml::from_str(&content)
+        .map_err(|e| Error::Config(format!("Failed to parse config.toml: {}", e)))?;
+
+    let Some(mcp_table) = config.get("mcp_servers").and_then(|v| v.as_table()) else {
+        return Ok(Vec::new());
+    };
+
+    let servers = mcp_table
+        .iter()
+        .filter_map(|(name, value)| {
+            let table = value.as_table()?;
+            // Grok uses `enabled` (default true); tolerate legacy `disabled` if present.
+            let enabled = if let Some(e) = table.get("enabled").and_then(|v| v.as_bool()) {
+                e
+            } else {
+                !table
+                    .get("disabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            };
+            let server_type = table.get("type").and_then(|v| v.as_str()).map(String::from);
+            let command = table
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let args = table.get("args").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.as_str().map(String::from))
+                    .collect()
+            });
+            let url = table.get("url").and_then(|v| v.as_str()).map(String::from);
+            Some(McpServerInfo {
+                name: name.clone(),
+                enabled,
+                server_type,
+                command,
+                args,
+                url,
+            })
+        })
+        .collect();
+
+    Ok(servers)
 }
 
 fn extract_mcp_from_claudecode_config(profile_path: &Path) -> Result<Vec<McpServerInfo>> {
@@ -327,6 +381,16 @@ pub fn extract_theme(harness: &dyn HarnessConfig, profile_path: &Path) -> Option
                 .and_then(|v| v.as_str())
                 .map(String::from)
         }
+        "grok-build" => {
+            let config_path = profile_path.join("config.toml");
+            let content = std::fs::read_to_string(&config_path).ok()?;
+            let parsed: toml::Value = toml::from_str(&content).ok()?;
+            parsed
+                .get("ui")
+                .and_then(|ui| ui.get("theme"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        }
         _ => None,
     }
 }
@@ -336,6 +400,7 @@ pub fn extract_model(harness: &dyn HarnessConfig, profile_path: &Path) -> Option
         "opencode" => extract_model_opencode(profile_path),
         "claude-code" => extract_model_claude_code(profile_path),
         "goose" => extract_model_goose(profile_path),
+        "grok-build" => extract_model_grok_build(profile_path),
         "amp-code" => extract_model_ampcode(profile_path),
         "crush" => extract_model_crush(profile_path),
         _ => None,
@@ -378,6 +443,19 @@ fn extract_model_goose(profile_path: &Path) -> Option<String> {
     parsed
         .get("GOOSE_MODEL")
         .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+fn extract_model_grok_build(profile_path: &Path) -> Option<String> {
+    let config_path = profile_path.join("config.toml");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let parsed: toml::Value = toml::from_str(&content).ok()?;
+
+    parsed
+        .get("models")
+        .and_then(|m| m.get("default"))
+        .and_then(|v| v.as_str())
+        .or_else(|| parsed.get("model").and_then(|v| v.as_str()))
         .map(String::from)
 }
 
@@ -696,6 +774,11 @@ pub fn extract_plugins(
         return extract_claude_code_plugins(profile_path);
     }
 
+    // Grok plugins are dirs under plugins/; plugin.json is optional.
+    if harness.id() == "grok-build" {
+        return extract_subdir_plugins(profile_path);
+    }
+
     match harness.plugins(&Scope::Global) {
         Ok(Some(dir)) => (
             Some(extract_resource_summary(
@@ -708,6 +791,35 @@ pub fn extract_plugins(
         Ok(None) => (None, None),
         Err(e) => (None, Some(format!("plugins: {}", e))),
     }
+}
+
+/// List plugin subdirectories (no required marker file).
+fn extract_subdir_plugins(profile_path: &Path) -> (Option<ResourceSummary>, Option<String>) {
+    let plugins_dir = profile_path.join("plugins");
+    if !plugins_dir.exists() {
+        return (None, None);
+    }
+
+    let entries = match std::fs::read_dir(&plugins_dir) {
+        Ok(e) => e,
+        Err(e) => return (None, Some(format!("plugins: {}", e))),
+    };
+
+    let mut plugins: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| e.file_name().to_str().map(String::from))
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    plugins.sort();
+
+    (
+        Some(ResourceSummary {
+            items: plugins,
+            directory_exists: true,
+        }),
+        None,
+    )
 }
 
 fn extract_plugins_from_opencode_config(

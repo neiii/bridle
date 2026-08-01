@@ -31,6 +31,8 @@ pub enum HarnessKind {
     Crush,
     /// Factory Droid (Factory's AI coding assistant)
     Droid,
+    /// Grok Build (xAI's coding agent)
+    GrokBuild,
 }
 
 impl fmt::Display for HarnessKind {
@@ -43,6 +45,7 @@ impl fmt::Display for HarnessKind {
             Self::CopilotCli => write!(f, "Copilot CLI"),
             Self::Crush => write!(f, "Crush"),
             Self::Droid => write!(f, "Droid"),
+            Self::GrokBuild => write!(f, "Grok Build"),
         }
     }
 }
@@ -58,6 +61,7 @@ impl HarnessKind {
             Self::CopilotCli => "Copilot CLI",
             Self::Crush => "Crush",
             Self::Droid => "Droid",
+            Self::GrokBuild => "Grok Build",
         }
     }
 
@@ -83,6 +87,7 @@ impl HarnessKind {
         Self::CopilotCli,
         Self::Crush,
         Self::Droid,
+        Self::GrokBuild,
     ];
 
     /// Returns the known CLI binary names for this harness.
@@ -109,6 +114,7 @@ impl HarnessKind {
             Self::CopilotCli => &["copilot"],
             Self::Crush => &["crush"],
             Self::Droid => &["droid"],
+            Self::GrokBuild => &["grok"],
         }
     }
 
@@ -177,6 +183,12 @@ impl HarnessKind {
             (Self::Droid, ResourceKind::Skills) => Some(&["skills"]),
             (Self::Droid, ResourceKind::Commands) => Some(&["commands"]),
             (Self::Droid, ResourceKind::Agents) => Some(&["droids"]),
+
+            // Grok Build - plural names under .grok
+            (Self::GrokBuild, ResourceKind::Skills) => Some(&["skills"]),
+            (Self::GrokBuild, ResourceKind::Commands) => Some(&["commands"]),
+            (Self::GrokBuild, ResourceKind::Agents) => Some(&["agents"]),
+            (Self::GrokBuild, ResourceKind::Plugins) => Some(&["plugins"]),
 
             // Unsupported combinations
             _ => None,
@@ -371,6 +383,8 @@ pub enum FileFormat {
     Jsonc,
     /// YAML format.
     Yaml,
+    /// TOML format.
+    Toml,
     /// Plain Markdown.
     Markdown,
     /// Markdown with YAML frontmatter.
@@ -540,7 +554,8 @@ impl EnvValue {
                 HarnessKind::ClaudeCode
                 | HarnessKind::AmpCode
                 | HarnessKind::CopilotCli
-                | HarnessKind::Droid => {
+                | HarnessKind::Droid
+                | HarnessKind::GrokBuild => {
                     format!("${{{env}}}")
                 }
                 HarnessKind::OpenCode | HarnessKind::Crush => format!("{{env:{env}}}"),
@@ -586,7 +601,8 @@ impl EnvValue {
                 HarnessKind::ClaudeCode
                 | HarnessKind::AmpCode
                 | HarnessKind::CopilotCli
-                | HarnessKind::Droid => Ok(format!("${{{env}}}")),
+                | HarnessKind::Droid
+                | HarnessKind::GrokBuild => Ok(format!("${{{env}}}")),
                 HarnessKind::OpenCode | HarnessKind::Crush => Ok(format!("{{env:{env}}}")),
                 HarnessKind::Goose => std::env::var(env)
                     .map_err(|_| crate::Error::MissingEnvVar { name: env.clone() }),
@@ -628,7 +644,8 @@ impl EnvValue {
             HarnessKind::ClaudeCode
             | HarnessKind::AmpCode
             | HarnessKind::CopilotCli
-            | HarnessKind::Droid => {
+            | HarnessKind::Droid
+            | HarnessKind::GrokBuild => {
                 if let Some(var) = s.strip_prefix("${").and_then(|s| s.strip_suffix('}')) {
                     Self::EnvRef {
                         env: var.to_string(),

@@ -61,6 +61,7 @@ impl HarnessConfig for harness_locate::Harness {
             harness_locate::HarnessKind::CopilotCli => "copilot-cli",
             harness_locate::HarnessKind::Crush => "crush",
             harness_locate::HarnessKind::Droid => "droid",
+            harness_locate::HarnessKind::GrokBuild => "grok-build",
             _ => "unknown",
         }
     }
@@ -88,9 +89,13 @@ impl HarnessConfig for harness_locate::Harness {
 
     fn parse_mcp_servers(&self, content: &str, filename: &str) -> Result<Vec<(String, bool)>> {
         let is_yaml = filename.ends_with(".yaml") || filename.ends_with(".yml");
+        let is_toml = filename.ends_with(".toml");
         let mut parsed: serde_json::Value = if is_yaml {
             let yaml: serde_yaml::Value = serde_yaml::from_str(content)?;
             serde_json::to_value(yaml)?
+        } else if is_toml {
+            let toml_val: toml::Value = toml::from_str(content)?;
+            serde_json::to_value(toml_val)?
         } else {
             serde_json::from_str(content)?
         };

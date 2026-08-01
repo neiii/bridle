@@ -14,8 +14,10 @@ pub mod amp_code;
 pub mod claude_code;
 pub mod copilot_cli;
 pub mod crush;
+pub(crate) mod dot_dir;
 pub mod droid;
 pub mod goose;
+pub mod grok_build;
 pub(crate) mod mcp_parse;
 pub mod opencode;
 
@@ -56,6 +58,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::is_installed(),
             HarnessKind::Crush => crush::is_installed(),
             HarnessKind::Droid => droid::is_installed(),
+            HarnessKind::GrokBuild => grok_build::is_installed(),
         };
 
         if is_installed {
@@ -135,6 +138,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::is_installed(),
             HarnessKind::Crush => crush::is_installed(),
             HarnessKind::Droid => droid::is_installed(),
+            HarnessKind::GrokBuild => grok_build::is_installed(),
         }
     }
 
@@ -156,6 +160,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::global_config_dir().ok(),
             HarnessKind::Crush => crush::global_config_dir().ok(),
             HarnessKind::Droid => droid::global_config_dir().ok(),
+            HarnessKind::GrokBuild => grok_build::global_config_dir().ok(),
         }
         .filter(|p| p.exists());
 
@@ -311,6 +316,19 @@ impl Harness {
                     file_format: FileFormat::Markdown,
                 }))
             }
+            HarnessKind::GrokBuild => {
+                let path = grok_build::skills_dir(scope)
+                    .ok_or_else(|| Error::NotFound("skills directory".into()))?;
+                Ok(Some(DirectoryResource {
+                    exists: path.exists(),
+                    path,
+                    structure: DirectoryStructure::Nested {
+                        subdir_pattern: "*".into(),
+                        file_name: "SKILL.md".into(),
+                    },
+                    file_format: FileFormat::MarkdownWithFrontmatter,
+                }))
+            }
             HarnessKind::Droid => {
                 let path = droid::skills_dir(scope)
                     .ok_or_else(|| Error::NotFound("skills directory".into()))?;
@@ -351,6 +369,7 @@ impl Harness {
             HarnessKind::Goose | HarnessKind::CopilotCli | HarnessKind::Crush => return Ok(None),
             HarnessKind::AmpCode => amp_code::commands_dir(scope)?,
             HarnessKind::Droid => droid::commands_dir(scope)?,
+            HarnessKind::GrokBuild => grok_build::commands_dir(scope)?,
         };
         Ok(Some(DirectoryResource {
             exists: path.exists(),
@@ -415,6 +434,22 @@ impl Harness {
             | HarnessKind::CopilotCli
             | HarnessKind::Crush
             | HarnessKind::Droid => Ok(None),
+            HarnessKind::GrokBuild => {
+                let path = grok_build::config_dir(scope)?.join("plugins");
+                // Plugins are directories under plugins/; plugin.json is optional.
+                // List all subdirs via Flat-style discovery on the directory itself
+                // using a Nested pattern that accepts any of the common markers.
+                Ok(Some(DirectoryResource {
+                    exists: path.exists(),
+                    path,
+                    structure: DirectoryStructure::Nested {
+                        subdir_pattern: "*".into(),
+                        // Optional marker — extraction also falls back to listing subdirs
+                        file_name: "plugin.json".into(),
+                    },
+                    file_format: FileFormat::Json,
+                }))
+            }
         }
     }
 
@@ -478,6 +513,18 @@ impl Harness {
                     file_format: FileFormat::MarkdownWithFrontmatter,
                 }))
             }
+            HarnessKind::GrokBuild => {
+                let path = grok_build::agents_dir(scope)
+                    .ok_or_else(|| Error::NotFound("agents directory".into()))?;
+                Ok(Some(DirectoryResource {
+                    exists: path.exists(),
+                    path,
+                    structure: DirectoryStructure::Flat {
+                        file_pattern: "*.md".into(),
+                    },
+                    file_format: FileFormat::MarkdownWithFrontmatter,
+                }))
+            }
             HarnessKind::Droid => {
                 let path = droid::agents_dir(scope)
                     .ok_or_else(|| Error::NotFound("agents directory".into()))?;
@@ -524,6 +571,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::config_dir(scope),
             HarnessKind::Crush => crush::config_dir(scope),
             HarnessKind::Droid => droid::config_dir(scope),
+            HarnessKind::GrokBuild => grok_build::config_dir(scope),
         }
     }
 
@@ -598,6 +646,14 @@ impl Harness {
                     base.join("mcp.json"),
                     "/mcpServers".into(),
                     FileFormat::Json,
+                )
+            }
+            HarnessKind::GrokBuild => {
+                let base = grok_build::mcp_dir(scope)?;
+                (
+                    base.join("config.toml"),
+                    "/mcp_servers".into(),
+                    FileFormat::Toml,
                 )
             }
         };
@@ -765,6 +821,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::rules_dir(scope),
             HarnessKind::Crush => crush::rules_dir(scope),
             HarnessKind::Droid => droid::rules_dir(scope),
+            HarnessKind::GrokBuild => grok_build::rules_dir(scope),
         };
         match path {
             Some(p) => Ok(Some(DirectoryResource {
@@ -859,6 +916,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::parse_mcp_servers(config)?,
             HarnessKind::Crush => crush::parse_mcp_servers(config)?,
             HarnessKind::Droid => droid::parse_mcp_servers(config)?,
+            HarnessKind::GrokBuild => grok_build::parse_mcp_servers(config)?,
         };
         Ok(servers.into_iter().collect())
     }
@@ -898,6 +956,7 @@ impl Harness {
             HarnessKind::CopilotCli => copilot_cli::parse_mcp_server(value),
             HarnessKind::Crush => crush::parse_mcp_server(value),
             HarnessKind::Droid => droid::parse_mcp_server(value),
+            HarnessKind::GrokBuild => grok_build::parse_mcp_server(value),
         };
 
         result.map_err(|e| match e {
@@ -1199,7 +1258,7 @@ mod tests {
 
     #[test]
     fn harness_kind_all_contains_all_variants() {
-        assert_eq!(HarnessKind::ALL.len(), 7);
+        assert_eq!(HarnessKind::ALL.len(), 8);
         assert!(HarnessKind::ALL.contains(&HarnessKind::ClaudeCode));
         assert!(HarnessKind::ALL.contains(&HarnessKind::OpenCode));
         assert!(HarnessKind::ALL.contains(&HarnessKind::Goose));
@@ -1207,6 +1266,7 @@ mod tests {
         assert!(HarnessKind::ALL.contains(&HarnessKind::CopilotCli));
         assert!(HarnessKind::ALL.contains(&HarnessKind::Crush));
         assert!(HarnessKind::ALL.contains(&HarnessKind::Droid));
+        assert!(HarnessKind::ALL.contains(&HarnessKind::GrokBuild));
     }
 
     #[test]

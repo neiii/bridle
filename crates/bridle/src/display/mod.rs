@@ -478,18 +478,17 @@ fn render_node_lines(lines: &mut Vec<Line<'static>>, node: &ProfileNode, tree: &
                 ));
             }
         }
-        SectionKind::RulesFile { exists } => {
-            if *exists {
-                lines.push(Line::styled(
-                    format!(
-                        "  {} Rules: {}",
-                        tree.branch,
-                        node.text.as_deref().unwrap_or("")
-                    ),
-                    Style::default().fg(Color::Gray),
-                ));
-            }
+        SectionKind::RulesFile { exists } if *exists => {
+            lines.push(Line::styled(
+                format!(
+                    "  {} Rules: {}",
+                    tree.branch,
+                    node.text.as_deref().unwrap_or("")
+                ),
+                Style::default().fg(Color::Gray),
+            ));
         }
+        SectionKind::RulesFile { .. } => {}
         SectionKind::Error => {
             if node.label == "Errors" {
                 for child in &node.children {

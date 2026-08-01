@@ -19,6 +19,9 @@ pub enum McpConfigError {
     #[error("Failed to parse YAML: {0}")]
     YamlParse(#[from] serde_yaml::Error),
 
+    #[error("Failed to parse TOML: {0}")]
+    TomlParse(#[from] toml::de::Error),
+
     #[error("Failed to write config: {0}")]
     Write(String),
 }
@@ -32,6 +35,7 @@ fn get_mcp_key(kind: HarnessKind) -> &'static str {
         HarnessKind::Goose => "extensions",
         HarnessKind::AmpCode => "amp.mcpServers",
         HarnessKind::Droid => "mcpServers",
+        HarnessKind::GrokBuild => "mcp_servers",
         _ => "mcpServers",
     }
 }
@@ -57,6 +61,10 @@ pub fn read_mcp_config(
         HarnessKind::OpenCode => {
             let stripped = strip_jsonc_comments(&content);
             serde_json::from_str(&stripped)?
+        }
+        HarnessKind::GrokBuild => {
+            let toml: toml::Value = toml::from_str(&content)?;
+            serde_json::to_value(toml)?
         }
         _ => serde_json::from_str(&content)?,
     };
@@ -92,6 +100,9 @@ pub fn write_mcp_config(
 ) -> Result<(), McpConfigError> {
     if kind == HarnessKind::Goose {
         return write_goose_yaml_preserving_comments(config_path, servers);
+    }
+    if kind == HarnessKind::GrokBuild {
+        return write_grok_toml_config(config_path, servers);
     }
 
     let key = get_mcp_key(kind);
@@ -134,6 +145,47 @@ pub fn write_mcp_config(
     let output = serde_json::to_string_pretty(&existing)?;
     fs::write(config_path, output)?;
     Ok(())
+}
+
+fn write_grok_toml_config(
+    config_path: &Path,
+    servers: &HashMap<String, serde_json::Value>,
+) -> Result<(), McpConfigError> {
+    let mut existing: toml::Table = if config_path.exists() {
+        let content = fs::read_to_string(config_path)?;
+        if content.trim().is_empty() {
+            toml::Table::new()
+        } else {
+            toml::from_str::<toml::Table>(&content)?
+        }
+    } else {
+        toml::Table::new()
+    };
+
+    let mcp = existing
+        .entry("mcp_servers".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let mcp_table = mcp
+        .as_table_mut()
+        .ok_or_else(|| McpConfigError::Write("mcp_servers section is not a table".to_string()))?;
+
+    for (name, value) in servers {
+        let toml_value = json_to_toml_value(value)?;
+        mcp_table.insert(name.clone(), toml_value);
+    }
+
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let output = toml::to_string_pretty(&existing)
+        .map_err(|e| McpConfigError::Write(format!("Failed to serialize TOML: {}", e)))?;
+    fs::write(config_path, output)?;
+    Ok(())
+}
+
+fn json_to_toml_value(value: &serde_json::Value) -> Result<toml::Value, McpConfigError> {
+    toml::Value::try_from(value.clone())
+        .map_err(|e| McpConfigError::Write(format!("Failed to convert MCP server to TOML: {}", e)))
 }
 
 fn write_goose_yaml_preserving_comments(
@@ -433,6 +485,78 @@ extensions:
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("model"));
         assert!(content.contains("claude-4"));
+    }
+
+    #[test]
+    fn read_write_grok_mcp_servers_toml() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[cli]
+installer = "manual"
+
+[ui]
+theme = "dark"
+
+[mcp]
+max_output_bytes = 40000
+"#,
+        )
+        .unwrap();
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "filesystem".to_string(),
+            serde_json::json!({
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                "enabled": true
+            }),
+        );
+
+        write_mcp_config(HarnessKind::GrokBuild, &path, &servers).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("mcp_servers"),
+            "must write mcp_servers key: {content}"
+        );
+        assert!(
+            !content.contains("[mcp.filesystem]"),
+            "must not write servers under [mcp.*]: {content}"
+        );
+        assert!(content.contains("filesystem"));
+        assert!(content.contains("installer"));
+        assert!(content.contains("theme"));
+        // [mcp] max_output_bytes section should still be present
+        assert!(content.contains("max_output_bytes") || content.contains("40000"));
+
+        let result = read_mcp_config(HarnessKind::GrokBuild, &path).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("filesystem"));
+    }
+
+    #[test]
+    fn read_grok_mcp_servers_key() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        let result = read_mcp_config(HarnessKind::GrokBuild, &path).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("github"));
+        assert_eq!(result["github"]["enabled"], false);
     }
 
     #[test]

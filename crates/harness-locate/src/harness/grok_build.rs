@@ -1,6 +1,6 @@
-//! Factory Droid harness implementation.
+//! Grok Build harness implementation.
 //!
-//! Factory Droid stores its configuration in `.factory/` directories.
+//! Grok Build stores its configuration in `.grok/` directories.
 
 use std::path::PathBuf;
 
@@ -12,18 +12,19 @@ use super::dot_dir::DotDirHarness;
 use super::mcp_parse::ParseConfig;
 
 const HARNESS: DotDirHarness = DotDirHarness {
-    dot_dir: ".factory",
-    agents_dir: "droids",
-    mcp_key: "mcpServers",
-    mcp_config: &ParseConfig::DROID,
+    dot_dir: ".grok",
+    agents_dir: "agents",
+    // Grok stores servers under [mcp_servers.<name>]; [mcp] is only for max_output_bytes.
+    mcp_key: "mcp_servers",
+    mcp_config: &ParseConfig::GROK_BUILD,
 };
 
-/// Returns the global Droid configuration directory.
+/// Returns the global Grok Build configuration directory.
 pub fn global_config_dir() -> Result<PathBuf> {
     HARNESS.global_config_dir()
 }
 
-/// Returns the project-local Droid configuration directory.
+/// Returns the project-local Grok Build configuration directory.
 #[must_use]
 pub fn project_config_dir(project_root: &std::path::Path) -> PathBuf {
     HARNESS.project_config_dir(project_root)
@@ -62,17 +63,17 @@ pub fn agents_dir(scope: &Scope) -> Option<PathBuf> {
     HARNESS.agents_dir(scope)
 }
 
-/// Checks if Droid is installed on this system.
+/// Checks if Grok Build is installed on this system.
 pub fn is_installed() -> bool {
     HARNESS.is_installed()
 }
 
-/// Parses a single MCP server from Droid's native format.
+/// Parses a single MCP server from Grok Build's native format.
 pub(crate) fn parse_mcp_server(value: &serde_json::Value) -> Result<McpServer> {
     HARNESS.parse_mcp_server(value)
 }
 
-/// Parses all MCP servers from a Droid config JSON.
+/// Parses all MCP servers from a Grok Build config JSON.
 pub(crate) fn parse_mcp_servers(config: &serde_json::Value) -> Result<Vec<(String, McpServer)>> {
     HARNESS.parse_mcp_servers(config, parse_mcp_server)
 }
@@ -89,19 +90,19 @@ mod tests {
         let root = PathBuf::from("/some/project");
         assert_eq!(
             project_config_dir(&root),
-            PathBuf::from("/some/project/.factory")
+            PathBuf::from("/some/project/.grok")
         );
         assert_eq!(
             commands_dir(&Scope::Project(root.clone())).unwrap(),
-            PathBuf::from("/some/project/.factory/commands")
+            PathBuf::from("/some/project/.grok/commands")
         );
         assert_eq!(
             skills_dir(&Scope::Project(root.clone())).unwrap(),
-            PathBuf::from("/some/project/.factory/skills")
+            PathBuf::from("/some/project/.grok/skills")
         );
         assert_eq!(
             agents_dir(&Scope::Project(root.clone())).unwrap(),
-            PathBuf::from("/some/project/.factory/droids")
+            PathBuf::from("/some/project/.grok/agents")
         );
         assert_eq!(rules_dir(&Scope::Project(root.clone())).unwrap(), root);
     }
@@ -113,7 +114,7 @@ mod tests {
         }
         let path = global_config_dir().unwrap();
         assert!(path.is_absolute());
-        assert!(path.ends_with(".factory"));
+        assert!(path.ends_with(".grok"));
     }
 
     #[test]
@@ -138,8 +139,8 @@ mod tests {
             "command": "node",
             "args": ["server.js"],
             "env": { "API_KEY": "${MY_API_KEY}" },
-            "timeout": 30000,
-            "disabled": true
+            "startup_timeout_sec": 30,
+            "enabled": false
         }))
         .unwrap();
         let McpServer::Stdio(server) = server else {
@@ -149,18 +150,32 @@ mod tests {
             server.env.get("API_KEY"),
             Some(&EnvValue::env("MY_API_KEY"))
         );
-        assert_eq!(server.timeout_ms, Some(30000));
+        assert_eq!(server.timeout_ms, Some(30_000));
         assert!(!server.enabled);
     }
 
     #[test]
     fn parses_server_map() {
-        let config = json!({ "mcpServers": {
+        let config = json!({ "mcp_servers": {
             "filesystem": { "command": "npx" },
             "remote-server": { "url": "https://example.com/sse" }
         } });
         let servers = parse_mcp_servers(&config).unwrap();
         assert_eq!(servers.len(), 2);
+    }
+
+    #[test]
+    fn parses_enabled_false() {
+        let server = parse_mcp_server(&json!({
+            "command": "npx",
+            "args": ["-y", "pkg"],
+            "enabled": false
+        }))
+        .unwrap();
+        let McpServer::Stdio(server) = server else {
+            panic!("Expected Stdio variant");
+        };
+        assert!(!server.enabled);
     }
 
     #[test]
