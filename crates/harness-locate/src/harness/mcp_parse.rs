@@ -91,7 +91,9 @@ impl ParseConfig {
         timeout_in_seconds: false,
     };
 
-    /// Droid style parsing config.
+    /// Grok Build style parsing config (`[mcp_servers.*]` in config.toml).
+    ///
+    /// Uses `enabled` (not `disabled`) and `startup_timeout_sec` in seconds.
     pub const GROK_BUILD: Self = Self {
         harness_name: "Grok Build",
         harness_kind: HarnessKind::GrokBuild,
@@ -100,9 +102,9 @@ impl ParseConfig {
         command_field: "command",
         url_field: "url",
         plain_env_values: false,
-        disabled_field: Some("disabled"),
-        timeout_field: "timeout",
-        timeout_in_seconds: false,
+        disabled_field: None, // uses `enabled` field
+        timeout_field: "startup_timeout_sec",
+        timeout_in_seconds: true,
     };
 
     pub const DROID: Self = Self {

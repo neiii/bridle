@@ -35,7 +35,7 @@ fn get_mcp_key(kind: HarnessKind) -> &'static str {
         HarnessKind::Goose => "extensions",
         HarnessKind::AmpCode => "amp.mcpServers",
         HarnessKind::Droid => "mcpServers",
-        HarnessKind::GrokBuild => "mcp",
+        HarnessKind::GrokBuild => "mcp_servers",
         _ => "mcpServers",
     }
 }
@@ -163,11 +163,11 @@ fn write_grok_toml_config(
     };
 
     let mcp = existing
-        .entry("mcp".to_string())
+        .entry("mcp_servers".to_string())
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
     let mcp_table = mcp
         .as_table_mut()
-        .ok_or_else(|| McpConfigError::Write("mcp section is not a table".to_string()))?;
+        .ok_or_else(|| McpConfigError::Write("mcp_servers section is not a table".to_string()))?;
 
     for (name, value) in servers {
         let toml_value = json_to_toml_value(value)?;
@@ -485,6 +485,78 @@ extensions:
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("model"));
         assert!(content.contains("claude-4"));
+    }
+
+    #[test]
+    fn read_write_grok_mcp_servers_toml() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[cli]
+installer = "manual"
+
+[ui]
+theme = "dark"
+
+[mcp]
+max_output_bytes = 40000
+"#,
+        )
+        .unwrap();
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "filesystem".to_string(),
+            serde_json::json!({
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                "enabled": true
+            }),
+        );
+
+        write_mcp_config(HarnessKind::GrokBuild, &path, &servers).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("mcp_servers"),
+            "must write mcp_servers key: {content}"
+        );
+        assert!(
+            !content.contains("[mcp.filesystem]"),
+            "must not write servers under [mcp.*]: {content}"
+        );
+        assert!(content.contains("filesystem"));
+        assert!(content.contains("installer"));
+        assert!(content.contains("theme"));
+        // [mcp] max_output_bytes section should still be present
+        assert!(content.contains("max_output_bytes") || content.contains("40000"));
+
+        let result = read_mcp_config(HarnessKind::GrokBuild, &path).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("filesystem"));
+    }
+
+    #[test]
+    fn read_grok_mcp_servers_key() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        let result = read_mcp_config(HarnessKind::GrokBuild, &path).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("github"));
+        assert_eq!(result["github"]["enabled"], false);
     }
 
     #[test]

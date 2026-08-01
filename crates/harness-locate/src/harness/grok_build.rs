@@ -14,7 +14,8 @@ use super::mcp_parse::ParseConfig;
 const HARNESS: DotDirHarness = DotDirHarness {
     dot_dir: ".grok",
     agents_dir: "agents",
-    mcp_key: "mcp",
+    // Grok stores servers under [mcp_servers.<name>]; [mcp] is only for max_output_bytes.
+    mcp_key: "mcp_servers",
     mcp_config: &ParseConfig::GROK_BUILD,
 };
 
@@ -138,8 +139,8 @@ mod tests {
             "command": "node",
             "args": ["server.js"],
             "env": { "API_KEY": "${MY_API_KEY}" },
-            "timeout": 30000,
-            "disabled": true
+            "startup_timeout_sec": 30,
+            "enabled": false
         }))
         .unwrap();
         let McpServer::Stdio(server) = server else {
@@ -149,18 +150,32 @@ mod tests {
             server.env.get("API_KEY"),
             Some(&EnvValue::env("MY_API_KEY"))
         );
-        assert_eq!(server.timeout_ms, Some(30000));
+        assert_eq!(server.timeout_ms, Some(30_000));
         assert!(!server.enabled);
     }
 
     #[test]
     fn parses_server_map() {
-        let config = json!({ "mcp": {
+        let config = json!({ "mcp_servers": {
             "filesystem": { "command": "npx" },
             "remote-server": { "url": "https://example.com/sse" }
         } });
         let servers = parse_mcp_servers(&config).unwrap();
         assert_eq!(servers.len(), 2);
+    }
+
+    #[test]
+    fn parses_enabled_false() {
+        let server = parse_mcp_server(&json!({
+            "command": "npx",
+            "args": ["-y", "pkg"],
+            "enabled": false
+        }))
+        .unwrap();
+        let McpServer::Stdio(server) = server else {
+            panic!("Expected Stdio variant");
+        };
+        assert!(!server.enabled);
     }
 
     #[test]

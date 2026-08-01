@@ -326,7 +326,7 @@ impl Harness {
                         subdir_pattern: "*".into(),
                         file_name: "SKILL.md".into(),
                     },
-                    file_format: FileFormat::Markdown,
+                    file_format: FileFormat::MarkdownWithFrontmatter,
                 }))
             }
             HarnessKind::Droid => {
@@ -436,14 +436,18 @@ impl Harness {
             | HarnessKind::Droid => Ok(None),
             HarnessKind::GrokBuild => {
                 let path = grok_build::config_dir(scope)?.join("plugins");
+                // Plugins are directories under plugins/; plugin.json is optional.
+                // List all subdirs via Flat-style discovery on the directory itself
+                // using a Nested pattern that accepts any of the common markers.
                 Ok(Some(DirectoryResource {
                     exists: path.exists(),
                     path,
                     structure: DirectoryStructure::Nested {
                         subdir_pattern: "*".into(),
-                        file_name: "plugin.toml".into(),
+                        // Optional marker — extraction also falls back to listing subdirs
+                        file_name: "plugin.json".into(),
                     },
-                    file_format: FileFormat::Toml,
+                    file_format: FileFormat::Json,
                 }))
             }
         }
@@ -646,7 +650,11 @@ impl Harness {
             }
             HarnessKind::GrokBuild => {
                 let base = grok_build::mcp_dir(scope)?;
-                (base.join("config.toml"), "/mcp".into(), FileFormat::Toml)
+                (
+                    base.join("config.toml"),
+                    "/mcp_servers".into(),
+                    FileFormat::Toml,
+                )
             }
         };
         Ok(Some(ConfigResource {

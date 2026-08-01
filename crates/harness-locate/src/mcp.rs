@@ -142,12 +142,11 @@ impl McpServer {
         match kind {
             HarnessKind::ClaudeCode => self.to_claude_code_value(kind),
             HarnessKind::CopilotCli => self.to_copilot_cli_value(kind),
-            HarnessKind::OpenCode | HarnessKind::Crush | HarnessKind::GrokBuild => {
-                self.to_opencode_value(kind)
-            }
+            HarnessKind::OpenCode | HarnessKind::Crush => self.to_opencode_value(kind),
             HarnessKind::Goose => self.to_goose_value(kind, name),
             HarnessKind::AmpCode => self.to_ampcode_value(kind),
             HarnessKind::Droid => self.to_droid_value(kind),
+            HarnessKind::GrokBuild => self.to_grok_build_value(kind),
         }
     }
 
@@ -474,6 +473,85 @@ impl McpServer {
                 }
                 if let Some(timeout_ms) = h.timeout_ms {
                     obj["timeout"] = serde_json::json!(timeout_ms);
+                }
+                Ok(obj)
+            }
+        }
+    }
+
+    /// Grok Build native format for `[mcp_servers.<name>]` in config.toml.
+    ///
+    /// ```toml
+    /// [mcp_servers.my-server]
+    /// command = "npx"
+    /// args = ["-y", "pkg"]
+    /// env = { KEY = "value" }
+    /// enabled = true
+    /// startup_timeout_sec = 30
+    ///
+    /// [mcp_servers.remote]
+    /// url = "https://example.com/mcp"
+    /// headers = { Authorization = "Bearer …" }
+    /// ```
+    fn to_grok_build_value(&self, kind: HarnessKind) -> Result<serde_json::Value, Error> {
+        match self {
+            Self::Stdio(s) => {
+                let mut obj = serde_json::json!({
+                    "command": s.command,
+                    "args": s.args,
+                    "enabled": s.enabled,
+                });
+                if !s.env.is_empty() {
+                    let env: std::collections::HashMap<String, String> = s
+                        .env
+                        .iter()
+                        .map(|(k, v)| Ok((k.clone(), v.try_to_native(kind)?)))
+                        .collect::<Result<_, Error>>()?;
+                    obj["env"] = serde_json::to_value(env).unwrap();
+                }
+                if let Some(timeout_ms) = s.timeout_ms {
+                    // Grok uses startup_timeout_sec (seconds)
+                    obj["startup_timeout_sec"] =
+                        serde_json::json!(timeout_ms.div_ceil(1000).max(1));
+                }
+                Ok(obj)
+            }
+            Self::Sse(s) => {
+                // Grok remote servers are url-based; transport is inferred.
+                let mut obj = serde_json::json!({
+                    "url": s.url,
+                    "enabled": s.enabled,
+                });
+                if !s.headers.is_empty() {
+                    let headers: std::collections::HashMap<String, String> = s
+                        .headers
+                        .iter()
+                        .map(|(k, v)| Ok((k.clone(), v.try_to_native(kind)?)))
+                        .collect::<Result<_, Error>>()?;
+                    obj["headers"] = serde_json::to_value(headers).unwrap();
+                }
+                if let Some(timeout_ms) = s.timeout_ms {
+                    obj["startup_timeout_sec"] =
+                        serde_json::json!(timeout_ms.div_ceil(1000).max(1));
+                }
+                Ok(obj)
+            }
+            Self::Http(h) => {
+                let mut obj = serde_json::json!({
+                    "url": h.url,
+                    "enabled": h.enabled,
+                });
+                if !h.headers.is_empty() {
+                    let headers: std::collections::HashMap<String, String> = h
+                        .headers
+                        .iter()
+                        .map(|(k, v)| Ok((k.clone(), v.try_to_native(kind)?)))
+                        .collect::<Result<_, Error>>()?;
+                    obj["headers"] = serde_json::to_value(headers).unwrap();
+                }
+                if let Some(timeout_ms) = h.timeout_ms {
+                    obj["startup_timeout_sec"] =
+                        serde_json::json!(timeout_ms.div_ceil(1000).max(1));
                 }
                 Ok(obj)
             }
@@ -1246,5 +1324,49 @@ mod tests {
             .unwrap();
         assert_eq!(value["type"], "http");
         assert_eq!(value["url"], "http://localhost:8080");
+    }
+
+    #[test]
+    fn to_native_value_stdio_grok_build() {
+        let mut env = HashMap::new();
+        env.insert("KEY".to_string(), EnvValue::env("SECRET"));
+
+        let server = McpServer::Stdio(StdioMcpServer {
+            command: "npx".to_string(),
+            args: vec!["-y".to_string(), "pkg".to_string()],
+            env,
+            cwd: None,
+            enabled: false,
+            timeout_ms: Some(30_000),
+        });
+
+        let value = server
+            .to_native_value(HarnessKind::GrokBuild, "my-server")
+            .unwrap();
+        // Must NOT be OpenCode format
+        assert!(value.get("type").is_none() || value["type"] != "local");
+        assert_eq!(value["command"], "npx");
+        assert_eq!(value["args"], serde_json::json!(["-y", "pkg"]));
+        assert_eq!(value["enabled"], false);
+        assert_eq!(value["startup_timeout_sec"], 30);
+        assert_eq!(value["env"]["KEY"], "${SECRET}");
+    }
+
+    #[test]
+    fn to_native_value_http_grok_build() {
+        let server = McpServer::Http(HttpMcpServer {
+            url: "https://example.com/mcp".to_string(),
+            headers: HashMap::new(),
+            oauth: None,
+            enabled: true,
+            timeout_ms: None,
+        });
+
+        let value = server
+            .to_native_value(HarnessKind::GrokBuild, "remote")
+            .unwrap();
+        assert_eq!(value["url"], "https://example.com/mcp");
+        assert_eq!(value["enabled"], true);
+        assert!(value.get("type").is_none());
     }
 }
