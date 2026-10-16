@@ -345,7 +345,7 @@ fn write_agent_to_harness_if_active(
     let Some(agents_resource) = harness.agents(&Scope::Global).ok().flatten() else {
         return Ok(None);
     };
-    let harness_agent_path = agents_resource.path.join(format!("{}.md", &agent.name));
+    let harness_agent_path = agents_resource.path.join(format!("{}.md", agent.name));
 
     if let Some(parent) = harness_agent_path.parent() {
         fs::create_dir_all(parent).map_err(InstallError::CreateDir)?;
@@ -384,7 +384,7 @@ fn write_command_to_harness_if_active(
     let Some(commands_resource) = harness.commands(&Scope::Global).ok().flatten() else {
         return Ok(None);
     };
-    let harness_command_path = commands_resource.path.join(format!("{}.md", &command.name));
+    let harness_command_path = commands_resource.path.join(format!("{}.md", command.name));
 
     if let Some(parent) = harness_command_path.parent() {
         fs::create_dir_all(parent).map_err(InstallError::CreateDir)?;
@@ -475,7 +475,7 @@ fn install_agent_to_dir_with_source(
     }
 
     let agents_dir = profile_dir.join(CANONICAL_AGENTS_DIR);
-    let agent_path = agents_dir.join(format!("{}.md", &agent.name));
+    let agent_path = agents_dir.join(format!("{}.md", agent.name));
 
     if agent_path.exists() && !options.force {
         return Ok(InstallOutcome::Skipped(InstallSkip {
@@ -557,7 +557,7 @@ fn install_command_to_dir_with_source(
     }
 
     let commands_dir = profile_dir.join(CANONICAL_COMMANDS_DIR);
-    let command_path = commands_dir.join(format!("{}.md", &command.name));
+    let command_path = commands_dir.join(format!("{}.md", command.name));
 
     if command_path.exists() && !options.force {
         return Ok(InstallOutcome::Skipped(InstallSkip {
