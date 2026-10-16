@@ -5,7 +5,6 @@ edition.workspace = true
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 readme = "../../README.md"
 keywords = ["ai", "cli", "configuration", "tui", "mcp"]
 categories = ["command-line-utilities", "config", "development-tools"]

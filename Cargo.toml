@@ -3,11 +3,9 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.9"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/neiii/bridle"
-homepage = "https://github.com/neiii/bridle"
 authors = ["d0"]
 
 [workspace.dependencies]
