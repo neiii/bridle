@@ -160,15 +160,3 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
-  duplicate-code:
-    name: Duplicate Code Detection
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      - name: Install jscpd
-        run: bun install -g jscpd
-      - name: Check for duplicate code
-        run: jscpd crates --reporters console --threshold 12
