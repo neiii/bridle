@@ -116,8 +116,9 @@ pub fn list_files(zip_bytes: &[u8], suffix: &str) -> Result<Vec<String>> {
 
     let matches: Vec<String> = archive
         .file_names()
+        .filter_map(|r| r.ok())
         .filter(|name| name.ends_with(suffix))
-        .map(String::from)
+        .map(|name| name.into_owned())
         .collect();
 
     Ok(matches)
