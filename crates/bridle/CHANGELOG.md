@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/neiii/bridle/compare/bridle-v0.3.0...bridle-v0.3.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **skills-locate:** handle zip 9.x API breaking changes ([#97](https://github.com/neiii/bridle/issues/97)) ([8a204f7](https://github.com/neiii/bridle/commit/8a204f71069b3a392db4491ad73f89b01a6698e5))
+
 ## [0.3.0](https://github.com/neiii/bridle/compare/bridle-v0.2.9...bridle-v0.3.0) (2026-10-16)
 
 
