@@ -97,7 +97,10 @@ pub fn extract_file(zip_bytes: &[u8], path: &str) -> Result<String> {
             .by_index(i)
             .map_err(|e| Error::ZipExtract(format!("read entry: {e}")))?;
 
-        let name = file.name().to_string();
+        let name = file
+            .name()
+            .map_err(|e| Error::ZipExtract(format!("read name: {e}")))?
+            .into_owned();
         if name.ends_with(normalized_path) || name == normalized_path {
             let mut content = String::new();
             file.read_to_string(&mut content)
