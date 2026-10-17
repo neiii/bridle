@@ -1,5 +1,5 @@
 {
-  "crates/harness-locate": "0.7.0",
+  "crates/harness-locate": "0.7.1",
   "crates/skills-locate": "0.4.1",
   "crates/bridle": "0.3.1"
 }
