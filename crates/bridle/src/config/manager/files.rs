@@ -15,7 +15,11 @@ const ALWAYS_EXCLUDED: &[&str] = &[
     "node_modules",
 ];
 
+/// Runtime / session paths preserved across profile switches and never copied
+/// into profiles. Includes Claude-style session data plus Grok install root
+/// artifacts (`~/.grok` is both config and install home).
 const SESSION_DATA: &[&str] = &[
+    // Claude / generic session data
     "transcripts",
     "debug",
     "statsig",
@@ -23,14 +27,41 @@ const SESSION_DATA: &[&str] = &[
     "todos",
     "shell-snapshots",
     "history.jsonl",
+    // Grok Build install + runtime (must not enter profiles or be wiped on switch)
+    "bin",
+    "downloads",
+    "bundled",
+    "sessions",
+    "marketplace-cache",
+    "logs",
+    "memtrace",
+    "vendor",
+    "upload_queue",
+    "relocations",
+    "docs",
+    "completions",
+    "auth.json",
+    "auth.json.lock",
+    "active_sessions.json",
+    "active_sessions.lock",
+    "worktrees.db",
+    "models_cache.json",
+    "agent_id",
+    "version.json",
+    ".metadata_version",
+    ".config-init.lock",
+    "managed_config.lock",
+    "slash-mru.json",
+    "tip_cursor.json",
+    "README.md",
 ];
 
 fn is_excluded(name: &str) -> bool {
-    ALWAYS_EXCLUDED.contains(&name) || SESSION_DATA.contains(&name)
+    ALWAYS_EXCLUDED.contains(&name) || SESSION_DATA.contains(&name) || name.ends_with(".lock")
 }
 
 fn is_session_data(name: &str) -> bool {
-    SESSION_DATA.contains(&name)
+    SESSION_DATA.contains(&name) || name.ends_with(".lock")
 }
 
 const MAX_EXTRA_BACKUPS: usize = 5;

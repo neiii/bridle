@@ -200,6 +200,15 @@ impl ProfileManager {
         }
 
         std::fs::remove_dir_all(&path)?;
+
+        // Clear stale active pointer so status/list don't reference a deleted profile.
+        if let Ok(mut config) = BridleConfig::load()
+            && config.active_profile_for(harness.id()) == Some(name.as_str())
+        {
+            config.clear_active_profile(harness.id());
+            let _ = config.save();
+        }
+
         Ok(())
     }
 

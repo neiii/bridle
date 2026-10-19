@@ -55,6 +55,7 @@ fn harness_id(kind: &HarnessKind) -> &'static str {
         HarnessKind::CopilotCli => "copilot-cli",
         HarnessKind::Crush => "crush",
         HarnessKind::Droid => "droid",
+        HarnessKind::GrokBuild => "grok-build",
         _ => "unknown",
     }
 }
@@ -68,6 +69,7 @@ fn harness_name(kind: &HarnessKind) -> &'static str {
         HarnessKind::CopilotCli => "Copilot CLI",
         HarnessKind::Crush => "Crush",
         HarnessKind::Droid => "Factory Droid",
+        HarnessKind::GrokBuild => "Grok Build",
         _ => "Unknown",
     }
 }
@@ -594,15 +596,11 @@ impl App {
                 #[cfg(feature = "tui-cards")]
                 ViewMode::Cards => self.next_profile(),
             },
-            KeyCode::Left | KeyCode::Char('h') => {
-                if self.view_mode == ViewMode::Dashboard {
-                    self.prev_harness();
-                }
+            KeyCode::Left | KeyCode::Char('h') if self.view_mode == ViewMode::Dashboard => {
+                self.prev_harness();
             }
-            KeyCode::Right | KeyCode::Char('l') => {
-                if self.view_mode == ViewMode::Dashboard {
-                    self.next_harness();
-                }
+            KeyCode::Right | KeyCode::Char('l') if self.view_mode == ViewMode::Dashboard => {
+                self.next_harness();
             }
             KeyCode::Enter => match self.view_mode {
                 ViewMode::Dashboard => {
@@ -622,10 +620,8 @@ impl App {
                     self.switch_to_selected();
                 }
             },
-            KeyCode::Char(' ') => {
-                if self.active_pane == Pane::Profiles {
-                    self.toggle_expansion();
-                }
+            KeyCode::Char(' ') if self.active_pane == Pane::Profiles => {
+                self.toggle_expansion();
             }
             KeyCode::Char('r') => {
                 self.sync_active_profiles();
@@ -659,12 +655,11 @@ impl App {
                     self.input_mode = InputMode::ConfirmingDelete;
                 }
             }
-            KeyCode::Char('e') => {
+            KeyCode::Char('e')
                 if matches!(self.view_mode, ViewMode::Dashboard)
-                    || self.active_pane == Pane::Profiles
-                {
-                    self.edit_selected();
-                }
+                    || self.active_pane == Pane::Profiles =>
+            {
+                self.edit_selected();
             }
             KeyCode::Char('f') => {
                 if let Some(harness_kind) = self.selected_harness() {

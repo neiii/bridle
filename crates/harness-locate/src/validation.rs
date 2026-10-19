@@ -175,7 +175,7 @@ impl AgentCapabilities {
                 color_format: ColorFormat::NamedOrHex,
                 supported_modes: &["subagent", "primary"],
             }),
-            HarnessKind::CopilotCli | HarnessKind::Droid => Some(Self {
+            HarnessKind::CopilotCli | HarnessKind::Droid | HarnessKind::GrokBuild => Some(Self {
                 tools_format: ToolsFormat::CommaSeparatedString,
                 color_format: ColorFormat::NamedOrHex,
                 supported_modes: &["subagent", "primary"],
@@ -214,7 +214,10 @@ impl SkillCapabilities {
                 name_must_match_directory: true,
                 description_required: true,
             }),
-            HarnessKind::ClaudeCode | HarnessKind::AmpCode | HarnessKind::Droid => Some(Self {
+            HarnessKind::ClaudeCode
+            | HarnessKind::AmpCode
+            | HarnessKind::Droid
+            | HarnessKind::GrokBuild => Some(Self {
                 name_format: NameFormat::Any,
                 name_must_match_directory: false,
                 description_required: false,
