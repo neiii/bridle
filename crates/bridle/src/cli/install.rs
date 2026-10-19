@@ -398,6 +398,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         HarnessKind::CopilotCli,
         HarnessKind::Crush,
         HarnessKind::Droid,
+        HarnessKind::GeminiCli,
     ];
 
     let mut groups: Vec<TargetGroup> = Vec::new();

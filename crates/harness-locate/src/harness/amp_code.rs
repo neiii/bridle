@@ -2,9 +2,10 @@
 //!
 //! AMP Code stores its configuration in:
 //! - **Global**: `~/.config/amp/`
-//! - **Project**: Not supported (AMP has no project-scoped config directory)
+//! - **Project**: `.amp/` in project root
 //!
-//! Note: Skills are shared with Goose at `~/.config/agents/skills/`.
+//! Note: Skills are shared with Goose at `~/.config/agents/skills/`, but Amp
+//! also supports `~/.config/amp/skills/` as a secondary global location.
 
 use std::path::PathBuf;
 
@@ -26,21 +27,28 @@ pub fn global_config_dir() -> Result<PathBuf> {
     Ok(platform::config_dir()?.join("amp"))
 }
 
+/// Returns the project-local AMP Code configuration directory.
+///
+/// # Arguments
+///
+/// * `project_root` - Path to the project root directory
+#[must_use]
+pub fn project_config_dir(project_root: &std::path::Path) -> PathBuf {
+    project_root.join(".amp")
+}
+
 /// Returns the config directory for the given scope.
 ///
 /// - **Global**: `~/.config/amp/`
-/// - **Project**: Returns `UnsupportedScope` error (AMP has no project config)
+/// - **Project**: `.amp/`
 ///
 /// # Errors
 ///
-/// Returns `Error::UnsupportedScope` for project scope.
+/// Returns an error if the configuration directory cannot be determined.
 pub fn config_dir(scope: &Scope) -> Result<PathBuf> {
     match scope {
         Scope::Global => global_config_dir(),
-        Scope::Project(_) => Err(Error::UnsupportedScope {
-            harness: "AMP Code".to_string(),
-            scope: "project".to_string(),
-        }),
+        Scope::Project(root) => Ok(project_config_dir(root)),
         Scope::Custom(path) => Ok(path.clone()),
     }
 }
@@ -48,11 +56,11 @@ pub fn config_dir(scope: &Scope) -> Result<PathBuf> {
 /// Returns the commands directory for the given scope.
 ///
 /// - **Global**: `~/.config/amp/commands/`
-/// - **Project**: `.agents/commands/`
+/// - **Project**: `.amp/commands/`
 pub fn commands_dir(scope: &Scope) -> Result<PathBuf> {
     match scope {
         Scope::Global => Ok(global_config_dir()?.join("commands")),
-        Scope::Project(root) => Ok(root.join(".agents").join("commands")),
+        Scope::Project(root) => Ok(project_config_dir(root).join("commands")),
         Scope::Custom(path) => Ok(path.join("commands")),
     }
 }
@@ -62,26 +70,32 @@ pub fn commands_dir(scope: &Scope) -> Result<PathBuf> {
 /// AMP stores MCP configuration in `settings.json` within the config directory.
 ///
 /// - **Global**: `~/.config/amp/`
-/// - **Project**: Returns `UnsupportedScope` error
+/// - **Project**: `.amp/`
 ///
 /// # Errors
 ///
-/// Returns `Error::UnsupportedScope` for project scope.
+/// Returns an error if the configuration directory cannot be determined.
 pub fn mcp_dir(scope: &Scope) -> Result<PathBuf> {
     config_dir(scope)
 }
 
 /// Returns the skills directory for the given scope.
 ///
-/// AMP shares the skills directory with Goose:
-/// - **Global**: `~/.config/agents/skills/`
+/// AMP supports multiple skills directories:
+/// - **Global**: `~/.config/agents/skills/` (preferred) or `~/.config/amp/skills/`
 /// - **Project**: `.agents/skills/`
 #[must_use]
 pub fn skills_dir(scope: &Scope) -> Option<PathBuf> {
     match scope {
-        Scope::Global => platform::config_dir()
-            .ok()
-            .map(|p| p.join("agents").join("skills")),
+        Scope::Global => {
+            let config = platform::config_dir().ok()?;
+            let shared = config.join("agents").join("skills");
+            if shared.exists() {
+                Some(shared)
+            } else {
+                Some(config.join("amp").join("skills"))
+            }
+        }
         Scope::Project(root) => Some(root.join(".agents").join("skills")),
         Scope::Custom(path) => Some(path.join("skills")),
     }
@@ -226,15 +240,9 @@ mod tests {
     #[test]
     fn config_dir_project_returns_unsupported_scope() {
         let root = PathBuf::from("/some/project");
-        let result = config_dir(&Scope::Project(root));
-        assert!(result.is_err());
-
-        if let Err(Error::UnsupportedScope { harness, scope }) = result {
-            assert_eq!(harness, "AMP Code");
-            assert_eq!(scope, "project");
-        } else {
-            panic!("Expected UnsupportedScope error");
-        }
+        let result = config_dir(&Scope::Project(root.clone()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), root.join(".amp"));
     }
 
     #[test]
@@ -255,7 +263,7 @@ mod tests {
         let result = commands_dir(&Scope::Project(root));
         assert!(result.is_ok());
         let path = result.unwrap();
-        assert_eq!(path, PathBuf::from("/some/project/.agents/commands"));
+        assert_eq!(path, PathBuf::from("/some/project/.amp/commands"));
     }
 
     #[test]
@@ -267,7 +275,7 @@ mod tests {
         let result = skills_dir(&Scope::Global);
         assert!(result.is_some());
         let path = result.unwrap();
-        assert!(path.ends_with("agents/skills"));
+        assert!(path.ends_with("agents/skills") || path.ends_with("amp/skills"));
     }
 
     #[test]
@@ -303,8 +311,8 @@ mod tests {
     fn mcp_dir_project_returns_unsupported_scope() {
         let root = PathBuf::from("/some/project");
         let result = mcp_dir(&Scope::Project(root));
-        assert!(result.is_err());
-        assert!(matches!(result, Err(Error::UnsupportedScope { .. })));
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with(".amp"));
     }
 
     #[test]

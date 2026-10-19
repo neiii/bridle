@@ -23,6 +23,7 @@ pub(crate) fn resolve_harness(name: &str) -> Result<Harness> {
         "copilot-cli" | "copilot" | "ghcp" => HarnessKind::CopilotCli,
         "crush" => HarnessKind::Crush,
         "droid" | "factory" => HarnessKind::Droid,
+        "gemini-cli" | "gemini" => HarnessKind::GeminiCli,
         _ => return Err(Error::UnknownHarness(name.to_string())),
     };
     Ok(Harness::new(kind))

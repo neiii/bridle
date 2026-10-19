@@ -9,6 +9,7 @@ pub fn get_install_instructions(kind: HarnessKind) -> Vec<String> {
         HarnessKind::CopilotCli => copilot_cli_instructions(),
         HarnessKind::Crush => crush_instructions(),
         HarnessKind::Droid => droid_instructions(),
+        HarnessKind::GeminiCli => gemini_cli_instructions(),
         _ => vec!["Unknown harness".to_string()],
     }
 }
@@ -45,6 +46,13 @@ fn droid_instructions() -> Vec<String> {
     vec![
         "- Visit https://factory.ai for installation instructions".to_string(),
         "- brew install factory-ai/tap/droid".to_string(),
+    ]
+}
+
+fn gemini_cli_instructions() -> Vec<String> {
+    vec![
+        "- npm install -g @google/gemini-cli".to_string(),
+        "- npx @google/gemini-cli".to_string(),
     ]
 }
 
@@ -143,6 +151,7 @@ pub fn get_empty_state_message(
         HarnessKind::CopilotCli => "Copilot CLI",
         HarnessKind::Crush => "Crush",
         HarnessKind::Droid => "Factory Droid",
+        HarnessKind::GeminiCli => "Gemini CLI",
         _ => "Unknown",
     };
 
@@ -192,6 +201,7 @@ pub fn get_empty_state_message(
                 HarnessKind::CopilotCli => "copilot",
                 HarnessKind::Crush => "crush",
                 HarnessKind::Droid => "droid",
+                HarnessKind::GeminiCli => "gemini",
                 _ => "<unknown>",
             };
 

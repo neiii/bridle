@@ -32,6 +32,7 @@ fn get_mcp_key(kind: HarnessKind) -> &'static str {
         HarnessKind::Goose => "extensions",
         HarnessKind::AmpCode => "amp.mcpServers",
         HarnessKind::Droid => "mcpServers",
+        HarnessKind::GeminiCli => "mcpServers",
         _ => "mcpServers",
     }
 }
@@ -62,7 +63,13 @@ pub fn read_mcp_config(
     };
 
     let key = get_mcp_key(kind);
-    let mcp_section = parsed.get(key).and_then(|v| v.as_object());
+    let mcp_section = match kind {
+        HarnessKind::GeminiCli => parsed
+            .get(key)
+            .or_else(|| parsed.get("mcp"))
+            .and_then(|v| v.as_object()),
+        _ => parsed.get(key).and_then(|v| v.as_object()),
+    };
 
     match mcp_section {
         Some(obj) => {
